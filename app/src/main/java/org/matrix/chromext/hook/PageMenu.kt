@@ -1,6 +1,7 @@
 package org.matrix.chromext.hook
 
 import android.content.Context
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.DisplayMetrics
 import android.view.Menu
@@ -217,12 +218,23 @@ object PageMenuHook : BaseHook() {
           return
         }
         button.setVisibility(View.VISIBLE)
-        if (button is ImageButton) {
-          button.setImageResource(R.drawable.ic_book)
-        } else {
-          // MaterialButton and friends take a Drawable rather than a resource id.
-          button.invokeMethod(ctx.getDrawable(R.drawable.ic_book)) { name == "setIcon" }
-        }
+        // Only the icon is cosmetic; the id is what makes the button reach readerMode, so a browser
+        // whose icon setter we cannot name still gets a working button.
+        runCatching {
+              if (button is ImageButton) {
+                button.setImageResource(R.drawable.ic_book)
+              } else {
+                // MaterialButton takes a Drawable, and its setIcon does not survive obfuscation, so
+                // match the signature and keep the inherited background setters out of the way.
+                button.invokeMethod(ctx.getDrawable(R.drawable.ic_book)) {
+                  name == "setIcon" ||
+                      (parameterTypes contentDeepEquals arrayOf(Drawable::class.java) &&
+                          returnType == Void.TYPE &&
+                          !name.startsWith("setBackground"))
+                }
+              }
+            }
+            .onFailure { Log.e("Cannot set the reader mode icon: ${it}") }
         button.setId(readerMode.ID)
       }
 
@@ -437,8 +449,21 @@ object PageMenuHook : BaseHook() {
         if (typeComesFirst) itemConstructor.newInstance(type, menuModel)
         else itemConstructor.newInstance(menuModel, type)
 
+    // Brave hangs its own zero-argument ModelList getters off the delegate, and matching on the
+    // signature alone lands on one of those, so our entries end up in a list nobody ever shows. The
+    // superclass declares buildMenuModelList abstract and an override keeps the name, so use it.
+    val buildMenuModelList =
+        findMethodOrNull(appMenuPropertiesDelegateImpl, true) {
+              parameterTypes.size == 0 &&
+                  Modifier.isAbstract(modifiers) &&
+                  returnType == MVCListAdapter_ModelList
+            }
+            ?.name
+
     return findMethod(tabbedAppMenuPropertiesDelegate) {
-          parameterTypes.size == 0 && returnType == MVCListAdapter_ModelList
+          parameterTypes.size == 0 &&
+              returnType == MVCListAdapter_ModelList &&
+              (buildMenuModelList == null || name == buildMenuModelList)
         }
         // public MVCListAdapter.ModelList buildMenuModelList()
         .hookAfter {
