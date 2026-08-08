@@ -147,8 +147,10 @@ object SpotifyHook : BaseHook() {
     var propertyParserFinder: Unhook? = null
     // Find a trampoline by searching smali files ending with `Properties`
     val trampoline =
-        loader.loadClass(
-            "com.spotify.localfiles.configurationimpl.AndroidLocalFilesConfigurationImplProperties")
+        // loader.loadClass(
+        //
+        // "com.spotify.localfiles.configurationimpl.AndroidLocalFilesConfigurationImplProperties")
+        loader.loadClass("com.spotify.localfiles.mediastoreimpl.LocalFilesProperties")
     propertyParserFinder =
         findMethod(trampoline) { name == "parse" }
             .hookAfter {
@@ -216,8 +218,8 @@ object SpotifyHook : BaseHook() {
     // Remove AD sections in home page and browse page
     val homePage =
         Page(
-            structure = "com.spotify.home.evopage.homeapi.proto.HomeStructure",
-            section = "com.spotify.home.evopage.homeapi.proto.Section",
+            structure = "com.spotify.casita.v1.resolved.HomeStructure",
+            section = "com.spotify.casita.v1.resolved.Section",
             field = "featureTypeCase_",
             toRemove =
                 setOf(
@@ -273,7 +275,7 @@ object SpotifyHook : BaseHook() {
     findMethod(fetchMessageRequest) { name == "getOpportunityId" }
         .hookAfter {
           val request = it.thisObject
-          if ((entityUri.get(request) as String).startsWith("upsell")) {
+          if ((entityUri.get(request) as String?)?.startsWith("upsell") == true) {
             purchaseAllowed.set(request, false)
           }
         }
