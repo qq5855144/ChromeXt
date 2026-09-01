@@ -181,7 +181,17 @@ function fixDialog() {
 
   const managerHint = document.createElement("p");
   managerHint.className = "manager-hint";
-  managerHint.textContent = "地址栏输入 about:blank#XT 打开脚本管理面板";
+  managerHint.append(document.createTextNode("地址栏输入 "));
+  const managerLink = document.createElement("a");
+  managerLink.className = "manager-link";
+  managerLink.href = "about:blank#XT";
+  managerLink.textContent = "about:blank#XT";
+  managerLink.setAttribute("aria-label", "打开脚本管理面板");
+  managerLink.addEventListener("click", (event) => {
+    event.preventDefault();
+    window.location.href = "about:blank#XT";
+  });
+  managerHint.append(managerLink, document.createTextNode(" 打开脚本管理面板"));
   const title = document.createElement("h2");
   title.textContent = "安装用户脚本";
   const name = document.createElement("p");
