@@ -1068,7 +1068,10 @@ GM.bootstrap = () => {
     const split = res.split(/\s+/).filter((it) => it.length > 0);
     const data = { name: split[0], url: split[1] };
     const integrity = data.url.split("#");
-    if (integrity.length > 1) data.url = integrity[0];
+    if (integrity.length > 1) {
+      data.url = integrity[0];
+      data.integrity = integrity.slice(1).join("#");
+    }
     return data;
   });
 
@@ -1272,6 +1275,45 @@ GM.bootstrap = () => {
       meta.code = async () => {
         for (const data of meta.resources) {
           data.content = await GM_xmlhttpRequest({ url: data.url });
+          if (data.integrity) {
+            // SRI 完整性校验：@resource name url#sha256=<base64>
+            try {
+              const [algo, expected] = data.integrity.split("=");
+              const normalized = algo.replace(/-/g, "").toLowerCase();
+              const digestName =
+                normalized == "sha256"
+                  ? "SHA-256"
+                  : normalized == "sha384"
+                  ? "SHA-384"
+                  : normalized == "sha512"
+                  ? "SHA-512"
+                  : null;
+              if (digestName == null) {
+                console.error(
+                  `ChromeXt: unsupported integrity algorithm ${algo} for resource ${data.name}`
+                );
+              } else {
+                const buffer = await crypto.subtle.digest(
+                  digestName,
+                  new TextEncoder().encode(data.content)
+                );
+                const actual = btoa(
+                  String.fromCharCode(...new Uint8Array(buffer))
+                );
+                if (actual !== expected) {
+                  throw new Error(
+                    `ChromeXt: integrity check failed for resource ${data.name}`
+                  );
+                }
+              }
+            } catch (e) {
+              if (e instanceof Error && e.message.includes("integrity"))
+                throw e;
+              console.error(
+                `ChromeXt: failed to verify resource ${data.name}: ${e.message}`
+              );
+            }
+          }
         }
         return meta.sync_code();
       };
