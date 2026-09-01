@@ -67,8 +67,7 @@
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    const opened = window.open(MANAGER_URL, "_blank", "noopener,noreferrer");
-    if (!opened) location.href = MANAGER_URL;
+    location.assign(MANAGER_URL);
   });
 
   const updateFullscreen = () => {
