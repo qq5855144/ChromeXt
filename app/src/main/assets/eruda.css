@@ -123,6 +123,61 @@ div.eruda-btn.eruda-search {
 }
 
 /* plugin */
+.eruda-entry-btn {
+  color: #6557d8 !important;
+  background: #eef1f4 !important;
+  box-shadow: 5px 5px 12px rgba(174,184,194,.5), -5px -5px 12px rgba(255,255,255,.94) !important;
+}
+.eruda-dev-tools,
+.eruda-tools,
+.eruda-toolbar,
+.eruda-panels,
+.eruda-panel,
+#eruda-info,
+#eruda-resources {
+  color: #303740 !important;
+  background: #eef1f4 !important;
+}
+.eruda-toolbar {
+  border: 0 !important;
+  box-shadow: inset 0 -4px 9px rgba(174,184,194,.34), inset 0 4px 9px rgba(255,255,255,.76) !important;
+}
+.eruda-toolbar .eruda-tool,
+.eruda-tools .eruda-tool,
+.eruda-btn {
+  border: 0 !important;
+  color: #6f7883 !important;
+  background: #eef1f4 !important;
+  box-shadow: none !important;
+}
+.eruda-toolbar .eruda-tool.eruda-active,
+.eruda-tools .eruda-tool.eruda-active,
+.eruda-btn:active {
+  color: #6557d8 !important;
+  box-shadow: inset 2px 2px 5px rgba(174,184,194,.42), inset -2px -2px 5px rgba(255,255,255,.84) !important;
+}
+.eruda-resizer {
+  background: #eef1f4 !important;
+  box-shadow: inset 0 2px 5px rgba(174,184,194,.38), inset 0 -2px 5px rgba(255,255,255,.8) !important;
+}
+#eruda-info h2.eruda-title,
+#eruda-resources h2.eruda-title {
+  color: #303740 !important;
+}
+#eruda-info input,
+#eruda-info textarea,
+#eruda-info select,
+#eruda-resources input,
+#eruda-resources textarea,
+#eruda-resources select,
+#eruda-resources .eruda-filter-item {
+  border: 0 !important;
+  border-radius: 10px !important;
+  color: #303740 !important;
+  background: #eef1f4 !important;
+  box-shadow: inset 3px 3px 7px rgba(174,184,194,.44), inset -3px -3px 7px rgba(255,255,255,.86) !important;
+  outline: none !important;
+}
 .eruda-filters > ul > li {
   display: flex;
 }
@@ -164,17 +219,33 @@ h2.eruda-title {
   flex-wrap: wrap;
   justify-content: space-around;
   > span {
-    padding: 0.3em;
-    margin: 0.3em;
-    border: 0.5px solid violet;
+    padding: 0.45em 0.7em;
+    margin: 0.4em;
+    border: 0;
+    border-radius: 10px;
+    color: #6557d8;
+    background: #eef1f4;
+    box-shadow: 4px 4px 9px rgba(174,184,194,.46), -4px -4px 9px rgba(255,255,255,.9);
   }
+  > span:active {
+    box-shadow: inset 2px 2px 5px rgba(174,184,194,.42), inset -2px -2px 5px rgba(255,255,255,.84);
+  }
+}
+#eruda-info .eruda-userscripts > div.eruda-content,
+#eruda-info .eruda-user-agent > div.eruda-content,
+#eruda-info .eruda-csp-rules > div.eruda-content {
+  padding: 0.75em;
+  border-radius: 12px;
+  background: #eef1f4;
+  box-shadow: inset 3px 3px 7px rgba(174,184,194,.42), inset -3px -3px 7px rgba(255,255,255,.84);
 }
 #eruda-resources .eruda-filter-item {
   width: 90%;
-  padding: 0.3em;
+  padding: 0.45em 0.65em;
 }
 #eruda-resources .eruda-delete-filter {
   width: 10%;
   margin: auto;
+  color: #ad4f52;
   text-align: center;
 }
