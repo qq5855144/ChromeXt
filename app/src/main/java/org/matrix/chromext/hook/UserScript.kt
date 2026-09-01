@@ -11,12 +11,14 @@ import org.matrix.chromext.proxy.UserScriptProxy
 import org.matrix.chromext.script.Local
 import org.matrix.chromext.script.ScriptDbManager
 import org.matrix.chromext.utils.Log
+import org.matrix.chromext.utils.SCRIPT_MANAGER_URL
 import org.matrix.chromext.utils.findField
 import org.matrix.chromext.utils.findFieldOrNull
 import org.matrix.chromext.utils.findMethod
 import org.matrix.chromext.utils.findMethodOrNull
 import org.matrix.chromext.utils.hookAfter
 import org.matrix.chromext.utils.hookBefore
+import org.matrix.chromext.utils.isScriptManagerEntry
 
 object UserScriptHook : BaseHook() {
 
@@ -148,7 +150,11 @@ object UserScriptHook : BaseHook() {
         }
         // public void loadUrl(LoadUrlParams params)
         .hookBefore {
-          val url = proxy.parseUrl(it.args[0])!!
+          var url = proxy.parseUrl(it.args[0])!!
+          if (isScriptManagerEntry(url)) {
+            it.args[0] = proxy.newLoadUrlParams(SCRIPT_MANAGER_URL)
+            url = SCRIPT_MANAGER_URL
+          }
           proxy.userAgentHook(url, it.args[0])
         }
 

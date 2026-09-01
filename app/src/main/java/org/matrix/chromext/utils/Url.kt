@@ -8,7 +8,7 @@ import org.matrix.chromext.script.Script
 
 const val ERUD_URL = "https://cdn.jsdelivr.net/npm/eruda"
 const val SCRIPT_MANAGER_URL = "data:text/html,ChromeXt-UserScript-Manager"
-const val SCRIPT_MANAGER_WEB_URL = "https://jingmatrix.github.io/ChromeXt/#userscripts"
+const val SCRIPT_MANAGER_ENTRY_URL = "https://chromext.invalid/userscripts"
 private const val DEV_FRONT_END = "https://chrome-devtools-frontend.appspot.com"
 
 fun randomString(length: Int): String {
@@ -118,6 +118,12 @@ fun isChromeXtFrontEnd(url: String?): Boolean {
 fun isChromeXtScriptManager(url: String?): Boolean =
     url == SCRIPT_MANAGER_URL ||
         (isChromeXtFrontEnd(url) && url?.substringAfter('#', "") == "userscripts")
+
+fun isScriptManagerEntry(url: String?): Boolean {
+  if (url == null) return false
+  val normalized = url.substringBefore('#').substringBefore('?').removeSuffix("/")
+  return normalized == SCRIPT_MANAGER_ENTRY_URL
+}
 
 private val sandboxHosts = listOf("raw.githubusercontent.com", "gist.githubusercontent.com")
 

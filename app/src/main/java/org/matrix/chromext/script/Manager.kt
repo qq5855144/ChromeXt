@@ -175,7 +175,6 @@ object ScriptDbManager {
       codes.add("globalThis.ChromeXt = Symbol.ChromeXt;")
     } else if (runScripts) {
       codes.add("Symbol.ChromeXt.lock(${Local.key}, '${Local.name}');")
-      if (frameId == null) codes.add(Local.userScriptLauncher)
     }
     codes.add("//# sourceURL=local://ChromeXt/init" + if (frameId == null) "" else "/" + frameId)
     webSettings?.invokeMethod(true) { name == "setJavaScriptEnabled" }
