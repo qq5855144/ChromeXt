@@ -119,7 +119,11 @@ object PageMenuHook : BaseHook() {
           Chrome.evaluateJavascript(listOf("Symbol.installScript(true);"), null, null, sandBoxed)
         }
         "org.matrix.chromext:id/manage_scripts_id" -> {
-          Chrome.evaluateJavascript(listOf("location.href='${SCRIPT_MANAGER_URL}';"))
+          val tab = Chrome.getTab()
+          if (tab != null) {
+            val loadUrlParams = UserScriptProxy.newLoadUrlParams(SCRIPT_MANAGER_URL)
+            UserScriptProxy.loadUrl.invoke(tab, loadUrlParams)
+          }
         }
         "org.matrix.chromext:id/developer_tools_id" -> Listener.on("inspectPages")
         "org.matrix.chromext:id/eruda_console_id" ->
@@ -347,7 +351,7 @@ object PageMenuHook : BaseHook() {
     return findMethod(tabbedAppMenuPropertiesDelegate) {
           parameterTypes.size == 0 && returnType == MVCListAdapter_ModelList
         }
-        // public AppMenuPropertiesDelegate buildMenuModelList()
+        // public MVCListAdapter.ModelList buildMenuModelList()
         .hookAfter {
           val tabProvider = mActivityTabProvider.get(it.thisObject)!!
           Chrome.updateTab(tabProvider.invokeMethod { name == "get" })
