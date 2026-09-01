@@ -18,13 +18,15 @@ object GM {
   init {
     val ctx = Chrome.getContext()
     Resource.enrich(ctx)
-
-    fun loadSegments(asset: String): Map<String, String> =
-        ctx.assets
-            .open(asset)
-            .bufferedReader()
-            .use { it.readText() }
-            .split("// Kotlin separator\n\n")
+    localScript =
+        listOf("GM.js", "GM_compat.js")
+            .flatMap { asset ->
+              ctx.assets
+                  .open(asset)
+                  .bufferedReader()
+                  .use { it.readText() }
+                  .split("// Kotlin separator\n\n")
+            }
             .associateBy(
                 {
                   val decalre = it.lines()[0]
@@ -32,10 +34,23 @@ object GM {
                   decalre.split(sep)[0].split(" ").last()
                 },
                 { it })
+  }
 
-    // Compatibility segments intentionally override matching GM.js entries while
-    // all non-overridden grants keep using the stable base implementation.
-    localScript = loadSegments("GM.js") + loadSegments("GM_compat.js")
+  private fun runtimeMeta(script: Script): String {
+    if (!script.grant.contains("none")) return script.meta
+    return script.meta
+        .lineSequence()
+        .filterNot {
+          val match = Regex("""^//\s+@grant(?:\s+(\S+))?\s*$""").matchEntire(it.trim())
+          match != null && match.groupValues.getOrNull(1) != "none"
+        }
+        .joinToString("\n")
+  }
+
+  private fun effectiveGrants(script: Script): List<String> {
+    if (script.grant.contains("none")) return listOf("none", "GM_info")
+    if (script.grant.isEmpty()) return listOf("GM_info", "unsafeWindow", "GM.info")
+    return script.grant.distinct()
   }
 
   fun bootstrap(
@@ -44,25 +59,23 @@ object GM {
   ): MutableList<String> {
     var code = script.code
     var grants = ""
-    val grantNone = script.grant.contains("none")
+    val effectiveGrants = effectiveGrants(script)
 
     if (!script.meta.startsWith("// ==UserScript==")) {
       code = script.meta + code
     }
 
-    script.grant.forEach {
+    effectiveGrants.forEach {
       when (it) {
         "none" -> return@forEach
         "frames" -> return@forEach
         "GM_info" -> return@forEach
         "GM.ChromeXt" -> return@forEach
         "window.close" -> return@forEach
+        "window.focus" -> return@forEach
+        "window.onurlchange" -> return@forEach
         else ->
-            if (grantNone) {
-              // @grant none is authoritative: do not inject privileged APIs even
-              // if malformed metadata also lists other grants.
-              return@forEach
-            } else if (localScript.containsKey(it)) {
+            if (localScript.containsKey(it)) {
               grants += localScript.get(it)
             } else if (it.startsWith("GM_")) {
               grants +=
@@ -78,24 +91,25 @@ object GM {
                       } else {
                         func
                       }
-              if (localScript.containsKey(name) && !script.grant.contains(name))
+              if (localScript.containsKey(name) && !effectiveGrants.contains(name))
                   grants += localScript.get(name)
               grants += "${it}={sync: ${name}};\n"
+            } else if (it.startsWith("window.")) {
+              grants +=
+                  "console.warn('ChromeXt: @grant ${it} is not implemented by this runtime');\n"
             }
       }
     }
 
     grants += localScript.get("GM.bootstrap")!!
-    val GM_info = JSONObject(mapOf("scriptMetaStr" to script.meta))
+    val GM_info = JSONObject(mapOf("scriptMetaStr" to runtimeMeta(script)))
     GM_info.put("script", JSONObject().put("id", script.id))
     if (script.storage != null) GM_info.put("storage", script.storage)
 
-    // User code runs in a nested scope so internal bootstrap bindings don't leak
-    // just because a grant was skipped. Granted legacy/modern APIs remain visible
-    // through their dedicated outer declarations.
     val userPrelude = mutableListOf<String>()
-    if (!script.grant.contains("GM_info")) userPrelude.add("const GM_info = undefined;")
-    if (!script.grant.any { it.startsWith("GM.") }) userPrelude.add("const GM = undefined;")
+    if (effectiveGrants.contains("none") || !effectiveGrants.any { it.startsWith("GM.") }) {
+      userPrelude.add("const GM = undefined;")
+    }
     val userBody =
         "(()=>{${userPrelude.joinToString("\n")}\n${script.lib.joinToString("\n")}\n${code}\n})();"
 
