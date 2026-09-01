@@ -32,7 +32,7 @@ fun parseScript(input: String, storage: String? = null): Script? {
         var storage: JSONObject? = null
         var noframes = false
         var runAt = "document-idle"
-        var injectInto = "page"
+        var injectInto = "auto"
         var sandbox = "raw"
       }
   script.meta.split("\n").forEach {
