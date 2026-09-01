@@ -18,9 +18,10 @@ object GM {
   init {
     val ctx = Chrome.getContext()
     Resource.enrich(ctx)
-    localScript =
+
+    fun loadSegments(asset: String): Map<String, String> =
         ctx.assets
-            .open("GM.js")
+            .open(asset)
             .bufferedReader()
             .use { it.readText() }
             .split("// Kotlin separator\n\n")
@@ -31,6 +32,10 @@ object GM {
                   decalre.split(sep)[0].split(" ").last()
                 },
                 { it })
+
+    // Compatibility segments intentionally override matching GM.js entries while
+    // all non-overridden grants keep using the stable base implementation.
+    localScript = loadSegments("GM.js") + loadSegments("GM_compat.js")
   }
 
   fun bootstrap(
@@ -39,6 +44,7 @@ object GM {
   ): MutableList<String> {
     var code = script.code
     var grants = ""
+    val grantNone = script.grant.contains("none")
 
     if (!script.meta.startsWith("// ==UserScript==")) {
       code = script.meta + code
@@ -52,7 +58,11 @@ object GM {
         "GM.ChromeXt" -> return@forEach
         "window.close" -> return@forEach
         else ->
-            if (localScript.containsKey(it)) {
+            if (grantNone) {
+              // @grant none is authoritative: do not inject privileged APIs even
+              // if malformed metadata also lists other grants.
+              return@forEach
+            } else if (localScript.containsKey(it)) {
               grants += localScript.get(it)
             } else if (it.startsWith("GM_")) {
               grants +=
@@ -79,8 +89,18 @@ object GM {
     val GM_info = JSONObject(mapOf("scriptMetaStr" to script.meta))
     GM_info.put("script", JSONObject().put("id", script.id))
     if (script.storage != null) GM_info.put("storage", script.storage)
-    code = "\ndelete window.__loading__;\n${code};"
-    code = localScript.get("globalThis")!! + script.lib.joinToString("\n") + code
+
+    // User code runs in a nested scope so internal bootstrap bindings don't leak
+    // just because a grant was skipped. Granted legacy/modern APIs remain visible
+    // through their dedicated outer declarations.
+    val userPrelude = mutableListOf<String>()
+    if (!script.grant.contains("GM_info")) userPrelude.add("const GM_info = undefined;")
+    if (!script.grant.any { it.startsWith("GM.") }) userPrelude.add("const GM = undefined;")
+    val userBody =
+        "(()=>{${userPrelude.joinToString("\n")}\n${script.lib.joinToString("\n")}\n${code}\n})();"
+
+    code = "\ndelete window.__loading__;\n${userBody};"
+    code = localScript.get("globalThis")!! + code
     codes.add(
         "(()=>{ const GM = {key:${Local.key}, name:'${Local.name}'}; const GM_info = ${GM_info}; GM_info.script.code = (key=null) => {${code}};\n${grants}GM.bootstrap();})();\n//# sourceURL=local://ChromeXt/${Uri.encode(script.id)}")
     return codes
