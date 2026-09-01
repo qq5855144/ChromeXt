@@ -30,7 +30,6 @@ import org.matrix.chromext.hook.UserScriptHook
 import org.matrix.chromext.hook.WebViewHook
 import org.matrix.chromext.proxy.UserScriptProxy
 import org.matrix.chromext.script.Local
-import org.matrix.chromext.script.ScriptDbHelper
 import org.matrix.chromext.script.ScriptDbManager
 import org.matrix.chromext.script.parseScript
 import org.matrix.chromext.utils.ERUD_URL
@@ -410,7 +409,15 @@ object Listener {
           callback = "ChromeXt.post('userscript', ${detail});"
         } else {
           val data = JSONObject(payload)
-          if (data.has("meta")) {
+          if (data.optBoolean("list")) {
+            callback = "ChromeXt.post('userscript_list', ${ScriptDbManager.managementList()});"
+          } else if (data.has("enabled") && data.has("ids")) {
+            val jsonArray = data.getJSONArray("ids")
+            val ids = Array(jsonArray.length()) { jsonArray.getString(it) }
+            val changed = ScriptDbManager.setEnabled(ids, data.getBoolean("enabled"))
+            val detail = JSONObject().put("changed", changed).put("type", "enabled")
+            callback = "ChromeXt.post('userscript_changed', ${detail});"
+          } else if (data.has("meta")) {
             val script = ScriptDbManager.scripts.filter { it.id == data.getString("id") }.first()
             val newScript =
                 parseScript(data.getString("meta") + script.code, script.storage?.toString())
@@ -426,11 +433,9 @@ object Listener {
             val ids = Array(jsonArray.length()) { jsonArray.getString(it) }
             val scripts = ScriptDbManager.scripts.filter { ids.contains(it.id) }
             if (data.optBoolean("delete")) {
-              val dbHelper = ScriptDbHelper(Chrome.getContext())
-              val db = dbHelper.writableDatabase
-              db.delete("script", "id = ?", ids)
-              ScriptDbManager.scripts.removeAll(scripts)
-              dbHelper.close()
+              val changed = ScriptDbManager.delete(ids)
+              val detail = JSONObject().put("changed", changed).put("type", "delete")
+              callback = "ChromeXt.post('userscript_changed', ${detail});"
             } else {
               val result = JSONArray(scripts.map { it.meta })
               callback = "ChromeXt.post('script_meta', ${result});"

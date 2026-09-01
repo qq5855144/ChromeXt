@@ -4,6 +4,7 @@
 	<string name="xposed_desc">UserScript and DevTools supports for Chromium based and WebView based browsers</string>
 	<string name="main_menu_extension">Extensions</string>
 	<string name="main_menu_install_script">Install UserScript</string>
+	<string name="main_menu_manage_scripts">UserScript 管理</string>
 	<string name="main_menu_developer_tools">Developer tools</string>
 	<string name="main_menu_eruda_console">Eruda console</string>
 </resources>

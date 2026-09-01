@@ -17,6 +17,11 @@
 		android:title="@string/main_menu_install_script"
 		android:icon="@drawable/ic_install_script" />
 	<item
+		android:id="@+id/manage_scripts_id"
+		android:visible="false"
+		android:title="@string/main_menu_manage_scripts"
+		android:icon="@drawable/ic_install_script" />
+	<item
 		android:id="@+id/eruda_console_id"
 		android:visible="false"
 		android:title="@string/main_menu_eruda_console"

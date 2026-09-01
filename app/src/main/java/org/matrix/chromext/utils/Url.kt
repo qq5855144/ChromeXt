@@ -7,6 +7,7 @@ import org.matrix.chromext.Chrome
 import org.matrix.chromext.script.Script
 
 const val ERUD_URL = "https://cdn.jsdelivr.net/npm/eruda"
+const val SCRIPT_MANAGER_URL = "data:text/html,ChromeXt-UserScript-Manager"
 private const val DEV_FRONT_END = "https://chrome-devtools-frontend.appspot.com"
 
 fun randomString(length: Int): String {
@@ -58,7 +59,6 @@ fun matching(script: Script, url: String): Boolean {
   }
   script.match.forEach {
     if (urlMatch(it, url, false)) {
-      // Log.d("${script.id} injected")
       return true
     }
   }
@@ -106,10 +106,15 @@ private val trustedHosts =
     listOf("jingmatrix.github.io", "jianyu-ma.onrender.com", "jianyu-ma.netlify.app")
 
 fun isChromeXtFrontEnd(url: String?): Boolean {
-  if (url == null || !url.endsWith("/ChromeXt/")) return false
-  trustedHosts.forEach { if (url == "https://" + it + "/ChromeXt/") return true }
+  if (url == null) return false
+  if (url == SCRIPT_MANAGER_URL) return true
+  val normalized = url.substringBefore('#').substringBefore('?')
+  if (!normalized.endsWith("/ChromeXt/")) return false
+  trustedHosts.forEach { if (normalized == "https://" + it + "/ChromeXt/") return true }
   return false
 }
+
+fun isChromeXtScriptManager(url: String?): Boolean = url == SCRIPT_MANAGER_URL
 
 private val sandboxHosts = listOf("raw.githubusercontent.com", "gist.githubusercontent.com")
 
