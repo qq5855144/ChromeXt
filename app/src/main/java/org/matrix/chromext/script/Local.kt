@@ -14,6 +14,7 @@ import org.matrix.chromext.utils.randomString
 
 object GM {
   private val localScript: Map<String, String>
+  private val cookieCompat: String
 
   init {
     val ctx = Chrome.getContext()
@@ -31,6 +32,7 @@ object GM {
                   decalre.split(sep)[0].split(" ").last()
                 },
                 { it })
+    cookieCompat = ctx.assets.open("GM_cookie_compat.js").bufferedReader().use { it.readText() }
   }
 
   fun bootstrap(
@@ -39,6 +41,7 @@ object GM {
   ): MutableList<String> {
     var code = script.code
     var grants = ""
+    val grantNone = script.grant.contains("none")
 
     if (!script.meta.startsWith("// ==UserScript==")) {
       code = script.meta + code
@@ -51,8 +54,11 @@ object GM {
         "GM_info" -> return@forEach
         "GM.ChromeXt" -> return@forEach
         "window.close" -> return@forEach
+        "GM_cookie" -> if (!grantNone) grants += cookieCompat
         else ->
-            if (localScript.containsKey(it)) {
+            if (grantNone) {
+              return@forEach
+            } else if (localScript.containsKey(it)) {
               grants += localScript.get(it)
             } else if (it.startsWith("GM_")) {
               grants +=
@@ -68,8 +74,11 @@ object GM {
                       } else {
                         func
                       }
-              if (localScript.containsKey(name) && !script.grant.contains(name))
-                  grants += localScript.get(name)
+              if (name == "GM_cookie") {
+                if (!script.grant.contains(name)) grants += cookieCompat
+              } else if (localScript.containsKey(name) && !script.grant.contains(name)) {
+                grants += localScript.get(name)
+              }
               grants += "${it}={sync: ${name}};\n"
             }
       }
@@ -79,8 +88,15 @@ object GM {
     val GM_info = JSONObject(mapOf("scriptMetaStr" to script.meta))
     GM_info.put("script", JSONObject().put("id", script.id))
     if (script.storage != null) GM_info.put("storage", script.storage)
-    code = "\ndelete window.__loading__;\n${code};"
-    code = localScript.get("globalThis")!! + script.lib.joinToString("\n") + code
+
+    val userPrelude = mutableListOf<String>()
+    if (!script.grant.contains("GM_info")) userPrelude.add("const GM_info = undefined;")
+    if (!script.grant.any { it.startsWith("GM.") }) userPrelude.add("const GM = undefined;")
+    val userBody =
+        "(()=>{${userPrelude.joinToString("\n")}\n${script.lib.joinToString("\n")}\n${code}\n})();"
+
+    code = "\ndelete window.__loading__;\n${userBody};"
+    code = localScript.get("globalThis")!! + code
     codes.add(
         "(()=>{ const GM = {key:${Local.key}, name:'${Local.name}'}; const GM_info = ${GM_info}; GM_info.script.code = (key=null) => {${code}};\n${grants}GM.bootstrap();})();\n//# sourceURL=local://ChromeXt/${Uri.encode(script.id)}")
     return codes
