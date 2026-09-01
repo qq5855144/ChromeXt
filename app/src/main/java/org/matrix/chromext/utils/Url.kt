@@ -8,7 +8,9 @@ import org.matrix.chromext.script.Script
 
 const val ERUD_URL = "https://cdn.jsdelivr.net/npm/eruda"
 const val SCRIPT_MANAGER_URL = "data:text/html,ChromeXt-UserScript-Manager"
-const val SCRIPT_MANAGER_ENTRY_URL = "https://chromext.invalid/userscripts"
+const val SCRIPT_MANAGER_ENTRY_URL = "about:blank#chromext-userscripts"
+private val SCRIPT_MANAGER_LEGACY_ENTRIES =
+    setOf("https://chromext.invalid/userscripts", "https://chromext.local/userscripts")
 private const val DEV_FRONT_END = "https://chrome-devtools-frontend.appspot.com"
 
 fun randomString(length: Int): String {
@@ -108,7 +110,7 @@ private val trustedHosts =
 
 fun isChromeXtFrontEnd(url: String?): Boolean {
   if (url == null) return false
-  if (url == SCRIPT_MANAGER_URL) return true
+  if (url == SCRIPT_MANAGER_URL || isScriptManagerEntry(url)) return true
   val normalized = url.substringBefore('#').substringBefore('?')
   if (!normalized.endsWith("/ChromeXt/")) return false
   trustedHosts.forEach { if (normalized == "https://" + it + "/ChromeXt/") return true }
@@ -117,12 +119,20 @@ fun isChromeXtFrontEnd(url: String?): Boolean {
 
 fun isChromeXtScriptManager(url: String?): Boolean =
     url == SCRIPT_MANAGER_URL ||
+        isScriptManagerEntry(url) ||
         (isChromeXtFrontEnd(url) && url?.substringAfter('#', "") == "userscripts")
 
 fun isScriptManagerEntry(url: String?): Boolean {
   if (url == null) return false
+  if (url == SCRIPT_MANAGER_ENTRY_URL) return true
   val normalized = url.substringBefore('#').substringBefore('?').removeSuffix("/")
-  return normalized == SCRIPT_MANAGER_ENTRY_URL
+  return SCRIPT_MANAGER_LEGACY_ENTRIES.contains(normalized)
+}
+
+fun isLegacyScriptManagerEntry(url: String?): Boolean {
+  if (url == null) return false
+  val normalized = url.substringBefore('#').substringBefore('?').removeSuffix("/")
+  return SCRIPT_MANAGER_LEGACY_ENTRIES.contains(normalized)
 }
 
 private val sandboxHosts = listOf("raw.githubusercontent.com", "gist.githubusercontent.com")
