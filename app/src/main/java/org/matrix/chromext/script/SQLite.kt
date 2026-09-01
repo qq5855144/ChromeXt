@@ -16,7 +16,7 @@ data class Script(
     val lib: List<String> = mutableListOf<String>(),
     val noframes: Boolean,
     val runAt: String = "document-idle",
-    val injectInto: String = "page",
+    val injectInto: String = "auto",
     val sandbox: String = "raw",
 )
 
