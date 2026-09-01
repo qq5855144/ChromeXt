@@ -37,11 +37,11 @@ function renderEditor(code, alertEncoding) {
 
   if (alertEncoding) {
     const msg =
-      "Current script may contain badly encoded text.\n\nTo fix possible issues, you can download this script and open it locally.";
+      "检测到当前脚本可能包含编码异常的内容。\n\n如需修复，可先下载该脚本，再通过本地文件方式安装。";
     createDialog(msg, false);
   } else {
     const msg =
-      "Code editor is blocked on this page.\n\nPlease use the menu to install this UserScript, or reload the page to solve this problem.";
+      "当前页面已阻止代码编辑器运行。\n\n请通过浏览器菜单安装此用户脚本，或刷新页面后重试。";
     createDialog(msg);
     setTimeout(fixDialog);
     // setTimeout is not working in sandboxed pages, and thus can be used for detecting sandboxed pages
@@ -74,19 +74,22 @@ function fixDialog() {
   if (dialog.textContent == "") return;
   dialog.close();
   dialog.textContent = "";
+  const title = document.createElement("h2");
+  title.textContent = "安装用户脚本";
+  dialog.append(title);
   const text = document.createElement("p");
-  text.textContent = "Confirm ChromeXt to install this UserScript?";
+  text.textContent = "是否确认将当前脚本安装到 ChromeXt？";
   const div = document.createElement("div");
   div.id = "interaction";
   const yes = document.createElement("button");
-  yes.textContent = "Confirm";
+  yes.textContent = "确认安装";
   yes.addEventListener("click", () => installScript(true));
   const no = document.createElement("button");
+  no.textContent = "稍后再说";
   no.addEventListener("click", () => {
     dialog.close();
     setTimeout(() => dialog.show(), 30000);
   });
-  no.textContent = "Ask 30s later";
   div.append(yes);
   div.append(no);
   dialog.append(text);
@@ -94,7 +97,7 @@ function fixDialog() {
   if (askChromeXt) {
     const alert = document.createElement("p");
     alert.id = "alert";
-    alert.textContent = "ATTENTION: GM.ChromeXt is declared";
+    alert.textContent = "注意：该脚本声明了 GM.ChromeXt 特殊权限，请谨慎确认。";
     dialog.append(alert);
   }
   dialog.append(div);
