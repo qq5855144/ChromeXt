@@ -60,15 +60,35 @@ body {
   min-width: 0;
 }
 
-.info-icon {
-  display: grid;
-  place-items: center;
-  width: 38px;
+.info-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
   height: 38px;
+  padding: 0 12px;
+  border: 0;
   border-radius: 13px;
-  font-size: 20px;
   flex-shrink: 0;
+  color: var(--neo-accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
   background: var(--neo-surface);
+  box-shadow: var(--neo-raised-sm);
+  cursor: pointer;
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.info-download:focus,
+.info-download:focus-visible {
+  outline: none !important;
+}
+
+.info-download:active {
+  transform: translateY(1px);
   box-shadow: var(--neo-inset-sm);
 }
 
@@ -144,6 +164,24 @@ pre#meta {
   color: #6c7480;
 }
 
+pre#meta:focus,
+pre#meta:focus-visible,
+pre#code:focus,
+pre#code:focus-visible,
+[contenteditable="true"]:focus,
+[contenteditable="true"]:focus-visible,
+[class*="shj-lang-"]:focus,
+[class*="shj-lang-"]:focus-visible {
+  border: 0 !important;
+  outline: none !important;
+  outline-color: transparent !important;
+}
+
+[contenteditable="true"] {
+  caret-color: var(--neo-accent);
+  -webkit-tap-highlight-color: transparent;
+}
+
 pre > em {
   color: var(--neo-warning);
   font-style: normal;
@@ -213,8 +251,8 @@ dialog#confirm[open] {
   border: 0;
   border-radius: 8px;
   color: var(--neo-accent);
-  background: var(--neo-surface);
-  box-shadow: var(--neo-inset-sm) !important;
+  background: rgba(255, 255, 255, 0.34);
+  box-shadow: none !important;
   font-weight: 750;
   text-decoration: underline;
   text-decoration-thickness: 1.4px;
@@ -232,7 +270,7 @@ dialog#confirm[open] {
 .manager-link:focus-visible {
   outline: none !important;
   outline-color: transparent !important;
-  box-shadow: var(--neo-inset-sm) !important;
+  box-shadow: none !important;
 }
 
 .manager-link:active {
@@ -264,12 +302,13 @@ dialog#confirm h2 {
 
 .chip {
   padding: 5px 11px;
+  border: 0;
   border-radius: 13px;
   color: var(--neo-accent);
   font-size: 12px;
   font-weight: 650;
-  background: var(--neo-surface);
-  box-shadow: var(--neo-inset-sm);
+  background: rgba(255, 255, 255, 0.34);
+  box-shadow: none;
 }
 
 dialog#confirm p#alert {
