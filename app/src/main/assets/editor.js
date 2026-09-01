@@ -179,9 +179,9 @@ function fixDialog() {
   const meta = document.querySelector("#meta");
   const info = meta ? parseScriptMeta(meta.innerText) : parseScriptMeta("");
 
-  const icon = document.createElement("div");
-  icon.className = "dialog-icon";
-  icon.textContent = "📦";
+  const managerHint = document.createElement("p");
+  managerHint.className = "manager-hint";
+  managerHint.textContent = "地址栏输入 about:ChromeXt 打开脚本管理面板";
   const title = document.createElement("h2");
   title.textContent = "安装用户脚本";
   const name = document.createElement("p");
@@ -214,7 +214,7 @@ function fixDialog() {
     setTimeout(() => dialog.show(), 30000);
   });
   div.append(no, yes);
-  dialog.append(icon, title, name, metaRow);
+  dialog.append(managerHint, title, name, metaRow);
   const askChromeXt = document.querySelector("#meta > em") != undefined;
   if (askChromeXt) {
     const alert = document.createElement("p");
