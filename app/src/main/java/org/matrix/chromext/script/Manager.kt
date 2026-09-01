@@ -110,7 +110,6 @@ object ScriptDbManager {
 
   private fun fixEncoding(url: String, path: String, codes: MutableList<String>) {
     if (path.endsWith(".js") || path.endsWith(".txt")) {
-      // Fix encoding for local text files
       val inputStream = Chrome.getContext().contentResolver.openInputStream(Uri.parse(url))
       val text = inputStream?.bufferedReader()?.readText()
       if (text != null) {
@@ -176,6 +175,7 @@ object ScriptDbManager {
       codes.add("globalThis.ChromeXt = Symbol.ChromeXt;")
     } else if (runScripts) {
       codes.add("Symbol.ChromeXt.lock(${Local.key}, '${Local.name}');")
+      if (frameId == null) codes.add(Local.userScriptLauncher)
     }
     codes.add("//# sourceURL=local://ChromeXt/init" + if (frameId == null) "" else "/" + frameId)
     webSettings?.invokeMethod(true) { name == "setJavaScriptEnabled" }
