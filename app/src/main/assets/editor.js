@@ -3,15 +3,100 @@ const isSandboxed = [
   "gist.githubusercontent.com",
 ].includes(location.hostname);
 
+// 解析脚本元数据，用于在安装界面中展示脚本信息
+function parseScriptMeta(metaText) {
+  const info = {
+    name: "未命名脚本",
+    namespace: "",
+    version: "",
+    author: "",
+    matches: [],
+    grants: [],
+    runAt: "",
+  };
+  const reg = /\/\/\s+@(\S+)(?:[ \t]+(.+))?/g;
+  let match;
+  while ((match = reg.exec(metaText)) !== null) {
+    const key = match[1];
+    const value = (match[2] || "").trim();
+    switch (key) {
+      case "name":
+        info.name = value.replace(":", "");
+        break;
+      case "namespace":
+        info.namespace = value;
+        break;
+      case "version":
+        info.version = value;
+        break;
+      case "author":
+        info.author = value;
+        break;
+      case "match":
+      case "include":
+        info.matches.push(value);
+        break;
+      case "grant":
+        info.grants.push(value);
+        break;
+      case "run-at":
+        info.runAt = value;
+        break;
+    }
+  }
+  if (info.grants.length == 0) info.grants.push("none");
+  return info;
+}
+
 async function installScript(force = false) {
   const dialog = document.querySelector("dialog#confirm");
   if (!force) {
     dialog.showModal();
   } else {
     dialog.close();
-    const script = document.body.innerText;
+    const meta = document.querySelector("#meta");
+    const code = document.querySelector("#code");
+    const script = (meta ? meta.innerText : "") + (code ? code.innerText : "");
     Symbol.ChromeXt.dispatch("installScript", script);
   }
+}
+
+// 创建顶部脚本信息卡片
+function createInfoCard(info) {
+  const card = document.createElement("div");
+  card.id = "script-info";
+  const head = document.createElement("div");
+  head.className = "info-head";
+  const icon = document.createElement("span");
+  icon.className = "info-icon";
+  icon.textContent = "📦";
+  const title = document.createElement("div");
+  title.className = "info-title";
+  const name = document.createElement("span");
+  name.className = "info-name";
+  name.textContent = info.name;
+  const version = document.createElement("span");
+  version.className = "info-version";
+  version.textContent = info.version ? "v" + info.version : "";
+  title.append(name, version);
+  head.append(icon, title);
+  const tags = document.createElement("div");
+  tags.className = "info-tags";
+  const matchTag = document.createElement("span");
+  matchTag.className = "tag";
+  matchTag.textContent = "🌐 " + info.matches.length + " 个站点";
+  const grantTag = document.createElement("span");
+  grantTag.className = "tag";
+  grantTag.textContent = "🔑 " + info.grants.length + " 项权限";
+  tags.append(matchTag, grantTag);
+  if (info.runAt) {
+    const runTag = document.createElement("span");
+    runTag.className = "tag";
+    runTag.textContent = "⚡ " + info.runAt;
+    tags.append(runTag);
+  }
+  card.append(head, tags);
+  return card;
 }
 
 function renderEditor(code, alertEncoding) {
@@ -19,7 +104,7 @@ function renderEditor(code, alertEncoding) {
   if (scriptMeta) return;
   const separator = "==/UserScript==\n";
   const script = code.innerHTML.split(separator);
-  if (separator.length == 1) return;
+  if (script.length < 2) return;
   let html = (script.shift() + separator).replace(
     "GM.ChromeXt",
     "<em>GM.ChromeXt</em>"
@@ -27,13 +112,17 @@ function renderEditor(code, alertEncoding) {
   for (const api of ["GM_notification", "GM_setClipboard", "GM_cookie"]) {
     html = html.replace(api, `<span>${api}</span>`);
   }
+  const plainMeta = html.replace(/<[^>]+>/g, "");
+  const info = parseScriptMeta(plainMeta);
   scriptMeta = document.createElement("pre");
   scriptMeta.innerHTML = html;
   code.innerHTML = script.join(separator);
   code.id = "code";
   code.removeAttribute("style");
   scriptMeta.id = "meta";
+  const infoCard = createInfoCard(info);
   document.body.prepend(scriptMeta);
+  document.body.prepend(infoCard);
 
   if (alertEncoding) {
     const msg =
@@ -44,14 +133,14 @@ function renderEditor(code, alertEncoding) {
       "当前页面已阻止代码编辑器运行。\n\n请通过浏览器菜单安装此用户脚本，或刷新页面后重试。";
     createDialog(msg);
     setTimeout(fixDialog);
-    // setTimeout is not working in sandboxed pages, and thus can be used for detecting sandboxed pages
+    // setTimeout 在沙箱页面中不可用，可借此检测沙箱页面
   }
 
   scriptMeta.setAttribute("contenteditable", true);
   code.setAttribute("contenteditable", true);
   scriptMeta.setAttribute("spellcheck", false);
   code.setAttribute("spellcheck", false);
-  // Too many nodes heavily slow down the event-loop, should be improved
+  // 节点过多会拖慢事件循环，后续可优化
   import("https://unpkg.com/@speed-highlight/core/dist/index.js").then(
     (imports) => {
       imports.highlightElement(code, "js", "multiline", {
@@ -61,12 +150,25 @@ function renderEditor(code, alertEncoding) {
   );
 }
 
-function createDialog(msg) {
+function createDialog(msg, interactive = true) {
   const dialog = document.createElement("dialog");
   dialog.id = "confirm";
-  dialog.textContent = msg;
   document.body.prepend(dialog);
-  dialog.show();
+  if (!interactive) {
+    // 纯提示对话框：不提供安装交互
+    const icon = document.createElement("div");
+    icon.className = "dialog-icon";
+    icon.textContent = "⚠️";
+    const text = document.createElement("p");
+    text.className = "dialog-msg";
+    text.textContent = msg;
+    dialog.append(icon, text);
+    dialog.show();
+  } else {
+    dialog.textContent = msg;
+    dialog.show();
+  }
+  return dialog;
 }
 
 function fixDialog() {
@@ -74,30 +176,50 @@ function fixDialog() {
   if (dialog.textContent == "") return;
   dialog.close();
   dialog.textContent = "";
+  const meta = document.querySelector("#meta");
+  const info = meta ? parseScriptMeta(meta.innerText) : parseScriptMeta("");
+
+  const icon = document.createElement("div");
+  icon.className = "dialog-icon";
+  icon.textContent = "📦";
   const title = document.createElement("h2");
   title.textContent = "安装用户脚本";
-  dialog.append(title);
-  const text = document.createElement("p");
-  text.textContent = "是否确认将当前脚本安装到 ChromeXt？";
+  const name = document.createElement("p");
+  name.className = "script-name";
+  name.textContent = info.name || "未命名脚本";
+  const metaRow = document.createElement("div");
+  metaRow.className = "dialog-meta";
+  const chips = [];
+  if (info.version) chips.push("v" + info.version);
+  chips.push(info.matches.length + " 个匹配站点");
+  chips.push(info.grants.length + " 项权限");
+  if (info.runAt) chips.push(info.runAt);
+  for (const chip of chips) {
+    const span = document.createElement("span");
+    span.className = "chip";
+    span.textContent = chip;
+    metaRow.append(span);
+  }
   const div = document.createElement("div");
   div.id = "interaction";
   const yes = document.createElement("button");
+  yes.className = "btn-primary";
   yes.textContent = "确认安装";
   yes.addEventListener("click", () => installScript(true));
   const no = document.createElement("button");
+  no.className = "btn-secondary";
   no.textContent = "稍后再说";
   no.addEventListener("click", () => {
     dialog.close();
     setTimeout(() => dialog.show(), 30000);
   });
-  div.append(yes);
-  div.append(no);
-  dialog.append(text);
+  div.append(no, yes);
+  dialog.append(icon, title, name, metaRow);
   const askChromeXt = document.querySelector("#meta > em") != undefined;
   if (askChromeXt) {
     const alert = document.createElement("p");
     alert.id = "alert";
-    alert.textContent = "注意：该脚本声明了 GM.ChromeXt 特殊权限，请谨慎确认。";
+    alert.textContent = "⚠️ 注意：该脚本声明了 GM.ChromeXt 特殊权限，请谨慎确认";
     dialog.append(alert);
   }
   dialog.append(div);
@@ -122,7 +244,7 @@ async function prepareDOM() {
   if (document.readyState == "loading") {
     if (isSandboxed) {
       return prepareDOM();
-      // EventListeners are unavailable in sandboxed pages
+      // 沙箱页面无法使用事件监听
     } else {
       return document.addEventListener("DOMContentLoaded", prepareDOM);
     }
