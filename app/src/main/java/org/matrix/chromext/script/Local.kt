@@ -14,14 +14,14 @@ import org.matrix.chromext.utils.randomString
 
 object GM {
   private val localScript: Map<String, String>
-  private val cookieCompat: String
 
   init {
     val ctx = Chrome.getContext()
     Resource.enrich(ctx)
-    localScript =
+
+    fun loadSegments(asset: String): Map<String, String> =
         ctx.assets
-            .open("GM.js")
+            .open(asset)
             .bufferedReader()
             .use { it.readText() }
             .split("// Kotlin separator\n\n")
@@ -32,7 +32,10 @@ object GM {
                   decalre.split(sep)[0].split(" ").last()
                 },
                 { it })
-    cookieCompat = ctx.assets.open("GM_cookie_compat.js").bufferedReader().use { it.readText() }
+
+    // Compatibility segments intentionally override matching GM.js entries while
+    // all non-overridden grants keep using the stable base implementation.
+    localScript = loadSegments("GM.js") + loadSegments("GM_compat.js")
   }
 
   fun bootstrap(
@@ -54,9 +57,10 @@ object GM {
         "GM_info" -> return@forEach
         "GM.ChromeXt" -> return@forEach
         "window.close" -> return@forEach
-        "GM_cookie" -> if (!grantNone) grants += cookieCompat
         else ->
             if (grantNone) {
+              // @grant none is authoritative: do not inject privileged APIs even
+              // if malformed metadata also lists other grants.
               return@forEach
             } else if (localScript.containsKey(it)) {
               grants += localScript.get(it)
@@ -74,11 +78,8 @@ object GM {
                       } else {
                         func
                       }
-              if (name == "GM_cookie") {
-                if (!script.grant.contains(name)) grants += cookieCompat
-              } else if (localScript.containsKey(name) && !script.grant.contains(name)) {
-                grants += localScript.get(name)
-              }
+              if (localScript.containsKey(name) && !script.grant.contains(name))
+                  grants += localScript.get(name)
               grants += "${it}={sync: ${name}};\n"
             }
       }
@@ -89,6 +90,9 @@ object GM {
     GM_info.put("script", JSONObject().put("id", script.id))
     if (script.storage != null) GM_info.put("storage", script.storage)
 
+    // User code runs in a nested scope so internal bootstrap bindings don't leak
+    // just because a grant was skipped. Granted legacy/modern APIs remain visible
+    // through their dedicated outer declarations.
     val userPrelude = mutableListOf<String>()
     if (!script.grant.contains("GM_info")) userPrelude.add("const GM_info = undefined;")
     if (!script.grant.any { it.startsWith("GM.") }) userPrelude.add("const GM = undefined;")
