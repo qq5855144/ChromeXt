@@ -12,6 +12,7 @@ import org.matrix.chromext.Chrome
 import org.matrix.chromext.utils.Log
 import org.matrix.chromext.utils.invokeMethod
 import org.matrix.chromext.utils.isChromeXtFrontEnd
+import org.matrix.chromext.utils.isChromeXtScriptManager
 import org.matrix.chromext.utils.isDevToolsFrontEnd
 import org.matrix.chromext.utils.isUserScript
 import org.matrix.chromext.utils.matching
@@ -50,17 +51,20 @@ object ScriptDbManager {
     val dbHelper = ScriptDbHelper(Chrome.getContext())
     val db = dbHelper.writableDatabase
     script.forEach {
+      val previous = scripts.find { old -> old.id == it.id }
       val lines = db.delete("script", "id = ?", arrayOf(it.id))
       if (lines > 0) {
         val id = it.id
         Log.d("Update ${lines} rows with id ${id}")
-        if (keepStorage) it.storage = scripts.find { it.id == id }?.storage
+        if (keepStorage) it.storage = previous?.storage
+        if (previous != null) it.enabled = previous.enabled
       }
       val values =
           ContentValues().apply {
             put("id", it.id)
             put("code", it.code)
             put("meta", it.meta)
+            put("enabled", if (it.enabled) 1 else 0)
             if (it.storage != null) {
               put("storage", it.storage.toString())
             }
@@ -74,6 +78,36 @@ object ScriptDbManager {
     dbHelper.close()
   }
 
+  fun setEnabled(ids: Array<String>, enabled: Boolean): Int {
+    if (ids.isEmpty()) return 0
+    val placeholders = ids.joinToString(",") { "?" }
+    val dbHelper = ScriptDbHelper(Chrome.getContext())
+    val values = ContentValues().apply { put("enabled", if (enabled) 1 else 0) }
+    val changed = dbHelper.writableDatabase.update("script", values, "id IN ($placeholders)", ids)
+    if (changed > 0) scripts.filter { ids.contains(it.id) }.forEach { it.enabled = enabled }
+    dbHelper.close()
+    return changed
+  }
+
+  fun delete(ids: Array<String>): Int {
+    if (ids.isEmpty()) return 0
+    val placeholders = ids.joinToString(",") { "?" }
+    val dbHelper = ScriptDbHelper(Chrome.getContext())
+    val changed = dbHelper.writableDatabase.delete("script", "id IN ($placeholders)", ids)
+    if (changed > 0) scripts.removeAll { ids.contains(it.id) }
+    dbHelper.close()
+    return changed
+  }
+
+  fun managementList(): JSONArray =
+      JSONArray(
+          scripts.map {
+            JSONObject()
+                .put("id", it.id)
+                .put("meta", it.meta)
+                .put("enabled", it.enabled)
+          })
+
   private fun fixEncoding(url: String, path: String, codes: MutableList<String>) {
     if (path.endsWith(".js") || path.endsWith(".txt")) {
       // Fix encoding for local text files
@@ -86,7 +120,6 @@ object ScriptDbManager {
       }
       inputStream?.close()
     } else if (url.endsWith(".js") || url.endsWith(".txt")) {
-      // Fix encoding for remote text files
       codes.add(Local.encoding)
     }
 
@@ -100,9 +133,7 @@ object ScriptDbManager {
     val webSettings = webView?.invokeMethod { name == "getSettings" }
 
     var trustedPage = true
-    // Whether ChromeXt is accessible in the global context
     var runScripts = false
-    // Whether UserScripts are invoked
     var bypassSandbox = false
 
     fixEncoding(url, path, codes)
@@ -114,7 +145,9 @@ object ScriptDbManager {
     } else if (isDevToolsFrontEnd(url)) {
       codes.add(Local.customizeDevTool)
       webSettings?.invokeMethod(null) { name == "setUserAgentString" }
-    } else if (!isChromeXtFrontEnd(url)) {
+    } else if (isChromeXtFrontEnd(url)) {
+      if (isChromeXtScriptManager(url)) codes.add(Local.userScriptManager)
+    } else {
       val origin = parseOrigin(url)
       if (origin != null) {
         if (cspRules.contains(origin)) {
@@ -158,7 +191,7 @@ object ScriptDbManager {
     if (asyncEvaluation) codes.add(initScript)
     if (runScripts) {
       scripts
-          .filter { matching(it, url) && !(frameId != null && it.noframes) }
+          .filter { it.enabled && matching(it, url) && !(frameId != null && it.noframes) }
           .forEach {
             if (it.grant.contains("frames")) framesGranted = true
             GM.bootstrap(it, codes)
@@ -204,8 +237,10 @@ object ScriptDbManager {
         val meta = getString(getColumnIndexOrThrow("meta"))
         val code = getString(getColumnIndexOrThrow("code"))
         val storage = getString(getColumnIndexOrThrow("storage"))
+        val enabled = getInt(getColumnIndexOrThrow("enabled")) != 0
         val script = parseScript(meta + code, storage)
         if (script != null && script.id == id) {
+          script.enabled = enabled
           quried_scripts.add(script)
         }
       }
