@@ -1,331 +1,429 @@
 @import url("https://unpkg.com/@speed-highlight/core/dist/themes/default.css");
+
+:root {
+  --neo-bg: #eef1f4;
+  --neo-surface: #eef1f4;
+  --neo-light: rgba(255, 255, 255, 0.96);
+  --neo-dark: rgba(174, 184, 194, 0.52);
+  --neo-dark-soft: rgba(174, 184, 194, 0.34);
+  --neo-text: #303740;
+  --neo-muted: #6f7883;
+  --neo-accent: #6557d8;
+  --neo-success: #397356;
+  --neo-danger: #ad4f52;
+  --neo-warning: #9a6a26;
+  --neo-raised: 9px 9px 20px var(--neo-dark), -9px -9px 20px var(--neo-light);
+  --neo-raised-sm: 5px 5px 12px rgba(174, 184, 194, 0.48), -5px -5px 12px rgba(255, 255, 255, 0.92);
+  --neo-inset: inset 4px 4px 9px rgba(174, 184, 194, 0.46), inset -4px -4px 9px rgba(255, 255, 255, 0.88);
+  --neo-inset-sm: inset 2px 2px 5px rgba(174, 184, 194, 0.42), inset -2px -2px 5px rgba(255, 255, 255, 0.84);
+}
+
 * {
   box-sizing: border-box;
 }
+
 html {
   overflow-x: hidden;
+  background: var(--neo-bg);
 }
+
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei",
-    sans-serif;
-  background: #f6f8fa;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--neo-text);
+  background: var(--neo-bg);
 }
+
 /* ===== 脚本信息卡片 ===== */
 #script-info {
   position: sticky;
-  top: 0;
+  top: 12px;
   z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
-  color: #fff;
-  box-shadow: 0 2px 12px rgba(79, 70, 229, 0.35);
+  margin: 12px 14px 18px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 20px;
+  color: var(--neo-text);
+  background: var(--neo-surface);
+  box-shadow: var(--neo-raised);
 }
+
 .info-head {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
 }
+
 .info-icon {
-  font-size: 22px;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
+  font-size: 20px;
   flex-shrink: 0;
+  background: var(--neo-surface);
+  box-shadow: var(--neo-inset-sm);
 }
+
 .info-title {
   display: flex;
   align-items: baseline;
   gap: 8px;
   min-width: 0;
 }
+
 .info-name {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 .info-version {
-  font-size: 12px;
-  opacity: 0.9;
-  background: rgba(255, 255, 255, 0.2);
-  padding: 1px 8px;
-  border-radius: 10px;
   flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 10px;
+  color: var(--neo-accent);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--neo-surface);
+  box-shadow: var(--neo-inset-sm);
 }
+
 .info-tags {
   display: flex;
-  gap: 6px;
+  gap: 7px;
   flex-shrink: 0;
 }
+
 .tag {
-  font-size: 11px;
-  background: rgba(255, 255, 255, 0.18);
-  padding: 3px 10px;
+  padding: 4px 10px;
   border-radius: 12px;
+  color: var(--neo-muted);
+  font-size: 11px;
+  font-weight: 650;
   white-space: nowrap;
+  background: var(--neo-surface);
+  box-shadow: var(--neo-inset-sm);
 }
+
 @media (max-width: 480px) {
   .info-tags {
     display: none;
   }
 }
+
 /* ===== 代码预览 ===== */
 pre {
-  margin: 0;
-  overflow-x: scroll;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
-pre#meta {
-  font-size: 12px;
-  line-height: 1.6;
-  padding: 14px 16px;
-  background: #0d1117;
-  color: #8b949e;
-  border-bottom: 1px solid #21262d;
-}
+
+pre#meta,
 pre#code {
+  margin: 12px 14px;
+  padding: 15px 16px;
+  border: 0;
+  border-radius: 18px;
+  color: #4f5965;
   font-size: 12px;
-  line-height: 1.6;
-  padding: 14px 16px;
-  background: #0d1117;
-  color: #c9d1d9;
+  line-height: 1.65;
+  background: var(--neo-surface);
+  box-shadow: var(--neo-inset);
 }
+
+pre#meta {
+  color: #6c7480;
+}
+
 pre > em {
+  color: var(--neo-warning);
   font-style: normal;
-  font-weight: 600;
-  color: #ffd76e;
+  font-weight: 700;
 }
+
 pre > span {
-  font-weight: 600;
-  color: #ff7b72;
+  color: var(--neo-danger);
+  font-weight: 700;
 }
-@media (prefers-color-scheme: dark) {
-  body {
-    background: #0d1117;
-  }
-  body > pre > em {
-    color: #ffd76e;
-  }
-}
+
 /* ===== 安装对话框 ===== */
 dialog#confirm {
-  border: none;
-  border-radius: 16px;
-  padding: 24px;
   width: min(400px, calc(100vw - 32px));
-  background: #fff;
-  color: #1f2328;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  padding: 25px;
+  border: 0;
+  border-radius: 24px;
+  color: var(--neo-text);
   text-align: center;
   white-space: normal;
+  background: var(--neo-surface);
+  box-shadow: 16px 16px 38px rgba(150, 160, 170, 0.44), -16px -16px 38px rgba(255, 255, 255, 0.94);
 }
+
 dialog#confirm::backdrop {
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(2px);
+  background: rgba(226, 230, 234, 0.7);
+  backdrop-filter: blur(5px);
 }
+
 dialog#confirm[open] {
-  animation: dialog-in 0.25s ease-out;
+  animation: dialog-in 0.24s ease-out;
 }
+
 @keyframes dialog-in {
   from {
     opacity: 0;
-    transform: translateY(16px) scale(0.96);
+    transform: translateY(14px) scale(0.97);
   }
   to {
     opacity: 1;
     transform: none;
   }
 }
+
 .dialog-icon {
-  font-size: 40px;
-  margin-bottom: 8px;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 12px;
+  border-radius: 19px;
+  font-size: 30px;
+  background: var(--neo-surface);
+  box-shadow: var(--neo-raised-sm);
 }
+
 .manager-hint {
-  margin: 0 0 12px;
+  margin: 0 0 16px;
+  color: var(--neo-muted);
   font-size: 12px;
-  line-height: 1.5;
-  color: #6e7781;
+  line-height: 1.6;
 }
+
 .manager-link {
   display: inline-block;
-  padding: 1px 5px;
+  padding: 3px 7px;
   border: 0;
-  border-radius: 6px;
-  color: #4f46e5;
-  background: #eef2ff;
-  font-weight: 700;
+  border-radius: 8px;
+  color: var(--neo-accent);
+  background: var(--neo-surface);
+  box-shadow: var(--neo-inset-sm) !important;
+  font-weight: 750;
   text-decoration: underline;
-  text-decoration-thickness: 1.5px;
+  text-decoration-thickness: 1.4px;
   text-underline-offset: 3px;
   cursor: pointer;
   outline: none !important;
-  box-shadow: none !important;
   -webkit-tap-highlight-color: transparent;
 }
+
 .manager-link:visited {
-  color: #4f46e5;
+  color: var(--neo-accent);
 }
+
 .manager-link:focus,
 .manager-link:focus-visible {
   outline: none !important;
   outline-color: transparent !important;
-  box-shadow: none !important;
+  box-shadow: var(--neo-inset-sm) !important;
 }
+
 .manager-link:active {
   opacity: 0.72;
 }
+
 dialog#confirm h2 {
-  margin: 0 0 4px;
-  font-size: 18px;
-  font-weight: 700;
+  margin: 0 0 5px;
+  color: var(--neo-text);
+  font-size: 19px;
+  font-weight: 750;
 }
+
 .script-name {
-  margin: 0 0 12px;
+  margin: 0 0 15px;
+  color: var(--neo-muted);
   font-size: 14px;
-  color: #57606a;
+  line-height: 1.45;
   word-break: break-all;
 }
+
 .dialog-meta {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 10px;
 }
+
 .chip {
+  padding: 5px 11px;
+  border-radius: 13px;
+  color: var(--neo-accent);
   font-size: 12px;
-  color: #4f46e5;
-  background: #eef2ff;
-  border-radius: 12px;
-  padding: 3px 10px;
+  font-weight: 650;
+  background: var(--neo-surface);
+  box-shadow: var(--neo-inset-sm);
 }
+
 dialog#confirm p#alert {
-  margin: 12px 0 0;
-  padding: 8px 12px;
+  margin: 14px 0 0;
+  padding: 10px 13px;
+  border-radius: 13px;
+  color: var(--neo-danger);
   font-size: 12px;
-  font-weight: 600;
-  color: #b91c1c;
-  background: #fef2f2;
-  border-radius: 8px;
+  font-weight: 700;
+  background: var(--neo-surface);
+  box-shadow: var(--neo-inset-sm);
 }
+
 dialog#confirm div#interaction {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   justify-content: center;
-  margin-top: 20px;
+  margin-top: 24px;
 }
+
 dialog#confirm button {
-  border: none;
-  border-radius: 10px;
-  padding: 10px 24px;
+  min-width: 112px;
+  padding: 11px 22px;
+  border: 0;
+  border-radius: 14px;
+  color: var(--neo-text);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: transform 0.1s ease, opacity 0.15s ease;
+  background: var(--neo-surface);
+  box-shadow: var(--neo-raised-sm);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, color 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
 }
+
+dialog#confirm button:hover {
+  color: var(--neo-accent);
+}
+
 dialog#confirm button:active {
-  transform: scale(0.96);
+  transform: translateY(1px) scale(0.985);
+  box-shadow: var(--neo-inset-sm);
 }
+
 .btn-primary {
-  color: #fff;
-  background: linear-gradient(135deg, #4f46e5, #7c3aed);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+  color: var(--neo-accent) !important;
 }
-.btn-primary:hover {
-  opacity: 0.92;
-}
+
 .btn-secondary {
-  color: #57606a;
-  background: #f6f8fa;
-  border: 1px solid #d0d7de;
+  color: var(--neo-muted) !important;
 }
-.btn-secondary:hover {
-  background: #eaeef2;
-}
+
 .dialog-msg {
-  margin: 8px 0 0;
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  color: var(--neo-muted);
   font-size: 14px;
-  line-height: 1.6;
-  color: #57606a;
+  line-height: 1.65;
   white-space: pre-wrap;
   text-align: left;
+  background: var(--neo-surface);
+  box-shadow: var(--neo-inset-sm);
 }
+
 /* ===== 安装结果提示 ===== */
 .install-result {
   position: fixed;
   left: 50%;
   bottom: max(24px, env(safe-area-inset-bottom));
   z-index: 2147483647;
-  min-width: 160px;
+  min-width: 170px;
   max-width: calc(100vw - 40px);
-  padding: 11px 18px;
-  border-radius: 12px;
-  color: #fff;
+  padding: 12px 20px;
+  border-radius: 16px;
+  color: var(--neo-text);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 750;
   line-height: 1.4;
   text-align: center;
   pointer-events: none;
   opacity: 0;
   transform: translate(-50%, 14px) scale(0.98);
   transition: opacity 0.18s ease, transform 0.18s ease;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
+  background: var(--neo-surface);
+  box-shadow: var(--neo-raised);
 }
+
 .install-result.show {
   opacity: 1;
   transform: translate(-50%, 0) scale(1);
 }
+
 .install-result.success {
-  background: rgba(31, 111, 64, 0.96);
+  color: var(--neo-success);
 }
+
 .install-result.failure {
-  background: rgba(185, 28, 28, 0.96);
+  color: var(--neo-danger);
 }
+
 /* ===== 语法高亮 ===== */
 [class*="shj-lang-"] {
-  border-radius: 0;
-  color: #abb2bf;
-  background: #161b22;
+  width: calc(100vw - 28px);
+  margin: 12px 14px;
+  padding: 15px 16px;
+  border: 0;
+  border-radius: 18px;
+  color: #47515e;
+  background: var(--neo-surface);
+  box-shadow: var(--neo-inset);
   font: 1em monospace;
-  padding: 8px 5px;
-  margin: 0;
-  width: 100vw;
   word-break: break-word;
 }
+
 [class*="shj-lang-"]:before {
-  color: #6f9aff;
+  color: #6577a8;
 }
+
 .shj-syn-deleted,
 .shj-syn-err,
 .shj-syn-var {
-  color: #e06c75;
+  color: #b55e65;
 }
+
 .shj-syn-section,
 .shj-syn-oper,
 .shj-syn-kwd {
-  color: #c678dd;
+  color: #775ea8;
 }
+
 .shj-syn-class {
-  color: #e5c07b;
+  color: #92702f;
 }
+
 .shj-numbers,
 .shj-syn-cmnt {
-  color: #76839a;
+  color: #8a929b;
 }
+
 .shj-syn-insert {
-  color: #98c379;
+  color: #4f8062;
 }
+
 .shj-syn-type {
-  color: #56b6c2;
+  color: #3f7e87;
 }
+
 .shj-syn-num,
 .shj-syn-bool {
-  color: #d19a66;
+  color: #a76c3a;
 }
+
 .shj-syn-str,
 .shj-syn-func {
-  color: #61afef;
+  color: #4f6f9e;
 }
