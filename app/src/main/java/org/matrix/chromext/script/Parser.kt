@@ -31,6 +31,9 @@ fun parseScript(input: String, storage: String? = null): Script? {
         val code = blockMatchGroup[2]?.value as String
         var storage: JSONObject? = null
         var noframes = false
+        var runAt = "document-idle"
+        var injectInto = "page"
+        var sandbox = "raw"
       }
   script.meta.split("\n").forEach {
     val metaMatchGroup = metaReg.matchEntire(it)?.groups
@@ -47,6 +50,9 @@ fun parseScript(input: String, storage: String? = null): Script? {
           "exclude" -> script.exclude.add(value)
           "require" -> script.require.add(value)
           "noframes" -> script.noframes = true
+          "run-at" -> script.runAt = value
+          "inject-into" -> script.injectInto = value
+          "sandbox" -> script.sandbox = value
         }
       } else {
         when (key) {
@@ -85,7 +91,10 @@ fun parseScript(input: String, storage: String? = null): Script? {
             script.code,
             script.storage,
             lib,
-            script.noframes)
+            script.noframes,
+            script.runAt,
+            script.injectInto,
+            script.sandbox)
     return parsed
   }
 }
