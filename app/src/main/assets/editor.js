@@ -181,7 +181,7 @@ function fixDialog() {
 
   const managerHint = document.createElement("p");
   managerHint.className = "manager-hint";
-  managerHint.textContent = "地址栏输入 about:ChromeXt 打开脚本管理面板";
+  managerHint.textContent = "地址栏输入 about:blank#XT 打开脚本管理面板";
   const title = document.createElement("h2");
   title.textContent = "安装用户脚本";
   const name = document.createElement("p");
