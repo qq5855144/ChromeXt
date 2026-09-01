@@ -1,45 +1,225 @@
 @import url("https://unpkg.com/@speed-highlight/core/dist/themes/default.css");
+* {
+  box-sizing: border-box;
+}
 html {
   overflow-x: hidden;
 }
-pre {
-  overflow-x: scroll;
-}
-@media (prefers-color-scheme: dark) {
-  body > pre > em {
-    color: yellow;
-  }
-}
-pre > em {
-  font-weight: bold;
-  color: blue;
-}
-pre > span {
-  font-weight: bold;
-  color: red;
-}
 body {
   margin: 0;
+  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+  background: #f6f8fa;
 }
-dialog#confirm {
-  white-space: pre-wrap;
-  text-wrap: balance;
-  top: 40%;
-  position: fixed;
-  max-width: calc((100% - 6px) - 2em);
-}
-dialog#confirm:modal {
+/* ===== 脚本信息卡片 ===== */
+#script-info {
+  position: sticky;
   top: 0;
-}
-dialog#confirm > p#alert {
-  text-align: center;
-  font-weight: bold;
-}
-dialog#confirm > div#interaction {
+  z-index: 10;
   display: flex;
-  justify-content: space-around;
-  margin-top: 2em;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(79, 70, 229, 0.35);
 }
+.info-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.info-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.info-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.info-name {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.info-version {
+  font-size: 12px;
+  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 1px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.info-tags {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.tag {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.18);
+  padding: 3px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+@media (max-width: 480px) {
+  .info-tags {
+    display: none;
+  }
+}
+/* ===== 代码预览 ===== */
+pre {
+  margin: 0;
+  overflow-x: scroll;
+}
+pre#meta {
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 14px 16px;
+  background: #0d1117;
+  color: #8b949e;
+  border-bottom: 1px solid #21262d;
+}
+pre#code {
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 14px 16px;
+  background: #0d1117;
+  color: #c9d1d9;
+}
+pre > em {
+  font-style: normal;
+  font-weight: 600;
+  color: #ffd76e;
+}
+pre > span {
+  font-weight: 600;
+  color: #ff7b72;
+}
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #0d1117;
+  }
+  body > pre > em {
+    color: #ffd76e;
+  }
+}
+/* ===== 安装对话框 ===== */
+dialog#confirm {
+  border: none;
+  border-radius: 16px;
+  padding: 24px;
+  width: min(400px, calc(100vw - 32px));
+  background: #fff;
+  color: #1f2328;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  text-align: center;
+  white-space: normal;
+}
+dialog#confirm::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+}
+dialog#confirm[open] {
+  animation: dialog-in 0.25s ease-out;
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.dialog-icon {
+  font-size: 40px;
+  margin-bottom: 8px;
+}
+dialog#confirm h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.script-name {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #57606a;
+  word-break: break-all;
+}
+.dialog-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.chip {
+  font-size: 12px;
+  color: #4f46e5;
+  background: #eef2ff;
+  border-radius: 12px;
+  padding: 3px 10px;
+}
+dialog#confirm p#alert {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b91c1c;
+  background: #fef2f2;
+  border-radius: 8px;
+}
+dialog#confirm div#interaction {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 20px;
+}
+dialog#confirm button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+dialog#confirm button:active {
+  transform: scale(0.96);
+}
+.btn-primary {
+  color: #fff;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+}
+.btn-primary:hover {
+  opacity: 0.92;
+}
+.btn-secondary {
+  color: #57606a;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+}
+.btn-secondary:hover {
+  background: #eaeef2;
+}
+.dialog-msg {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #57606a;
+  white-space: pre-wrap;
+  text-align: left;
+}
+/* ===== 语法高亮 ===== */
 [class*="shj-lang-"] {
   border-radius: 0;
   color: #abb2bf;
