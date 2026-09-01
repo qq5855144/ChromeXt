@@ -296,7 +296,7 @@ object PageMenuHook : BaseHook() {
             newMenuItem.setVisible(true)
             items.add(position + 1, newMenuItem)
           }
-          for (i in 0..3) items.removeLast()
+          repeat(4) { items.removeAt(items.lastIndex) }
         }
 
     // Inflate for MVC UI model
