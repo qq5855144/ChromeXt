@@ -11,25 +11,20 @@ import org.matrix.chromext.proxy.UserScriptProxy
 import org.matrix.chromext.script.Local
 import org.matrix.chromext.script.ScriptDbManager
 import org.matrix.chromext.utils.Log
+import org.matrix.chromext.utils.SCRIPT_MANAGER_URL
 import org.matrix.chromext.utils.findField
 import org.matrix.chromext.utils.findFieldOrNull
 import org.matrix.chromext.utils.findMethod
 import org.matrix.chromext.utils.findMethodOrNull
 import org.matrix.chromext.utils.hookAfter
 import org.matrix.chromext.utils.hookBefore
+import org.matrix.chromext.utils.isScriptManagerEntry
 
 object UserScriptHook : BaseHook() {
 
   override fun init() {
 
     val proxy = UserScriptProxy
-
-    // proxy.tabModelJniBridge.declaredConstructors[0].hookAfter {
-    //   Chrome.addTabModel(it.thisObject)
-    // }
-
-    // findMethod(proxy.tabModelJniBridge) { name == "destroy" }
-    //     .hookBefore { Chrome.dropTabModel(it.thisObject) }
 
     if (Chrome.isSamsung) {
       findMethodOrNull(proxy.tabWebContentsDelegateAndroidImpl) { name == "onDidFinishNavigation" }
@@ -43,7 +38,6 @@ object UserScriptHook : BaseHook() {
           .hookAfter { Chrome.updateTab(it.thisObject) }
 
       runCatching {
-            // Avoid exceptions thrown due to signature conficts while binding services
             val ConnectionManager =
                 Chrome.load("com.samsung.android.sdk.scs.base.connection.ConnectionManager")
             val mServiceConnection =
@@ -51,7 +45,6 @@ object UserScriptHook : BaseHook() {
                     .also { it.isAccessible = true }
 
             findMethod(ConnectionManager) { name == "connectToService" }
-                // (Landroid/content/Context;Landroid/content/Intent;)Z
                 .hookBefore {
                   val hook = it
                   val ctx = hook.args[0] as Context
@@ -71,7 +64,6 @@ object UserScriptHook : BaseHook() {
           .onFailure { if (BuildConfig.DEBUG) Log.ex(it) }
 
       runCatching {
-            // Avoid version codes mismatch when isolated child services are connected
             val childProcessConnection =
                 Chrome.load("org.chromium.base.process_launcher.ChildProcessConnection")
             val packageUtils = Chrome.load("org.chromium.base.PackageUtils")
@@ -86,7 +78,6 @@ object UserScriptHook : BaseHook() {
 
             if (version_code != null) {
               findMethod(childProcessConnection) { name == "onServiceConnectedOnLauncherThread" }
-                  // (Landroid/os/IBinder;)V
                   .hookBefore {
                     val latestPackage = getApplicationPackageInfo.invoke(null, 0)
                     val latestVersionCode = packageVersionCode.invoke(null, latestPackage)
@@ -105,7 +96,6 @@ object UserScriptHook : BaseHook() {
     findMethod(if (Chrome.isSamsung) proxy.tabImpl else proxy.tabWebContentsDelegateAndroidImpl) {
           name == "onUpdateUrl" || name == "onUpdateTargetUrl"
         }
-        // public void onUpdateTargetUrl(GURL url)
         .hookAfter {
           val tab = proxy.getTab(it.thisObject)!!
           if (!Chrome.isSamsung) Chrome.updateTab(tab)
@@ -122,10 +112,7 @@ object UserScriptHook : BaseHook() {
     findMethod(proxy.tabWebContentsDelegateAndroidImpl) {
           name == if (Chrome.isSamsung) "onAddMessageToConsole" else "addMessageToConsole"
         }
-        // public boolean addMessageToConsole(int level, String message, int lineNumber,
-        // String sourceId)
         .hookAfter {
-          // This should be the way to communicate with the front-end of ChromeXt
           val lineNumber = it.args[2] as Int
           val sourceId = it.args[3] as String
           if (it.args[0] as Int == 0 &&
@@ -146,9 +133,12 @@ object UserScriptHook : BaseHook() {
     findMethod(proxy.navigationControllerImpl) {
           name == "loadUrl" || parameterTypes contentDeepEquals arrayOf(proxy.loadUrlParams)
         }
-        // public void loadUrl(LoadUrlParams params)
         .hookBefore {
-          val url = proxy.parseUrl(it.args[0])!!
+          var url = proxy.parseUrl(it.args[0])!!
+          if (isScriptManagerEntry(url)) {
+            it.args[0] = proxy.newLoadUrlParams(SCRIPT_MANAGER_URL)
+            url = SCRIPT_MANAGER_URL
+          }
           proxy.userAgentHook(url, it.args[0])
         }
 
