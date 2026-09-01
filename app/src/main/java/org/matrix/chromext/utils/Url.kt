@@ -8,7 +8,7 @@ import org.matrix.chromext.script.Script
 
 const val ERUD_URL = "https://cdn.jsdelivr.net/npm/eruda"
 const val SCRIPT_MANAGER_URL = "data:text/html,ChromeXt-UserScript-Manager"
-const val SCRIPT_MANAGER_ENTRY_URL = "https://chromext.local/userscripts"
+const val SCRIPT_MANAGER_ENTRY_URL = "https://chromext.invalid/userscripts"
 private const val DEV_FRONT_END = "https://chrome-devtools-frontend.appspot.com"
 
 fun randomString(length: Int): String {
