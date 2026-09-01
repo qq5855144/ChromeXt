@@ -8,10 +8,12 @@ import org.matrix.chromext.script.Script
 
 const val ERUD_URL = "https://cdn.jsdelivr.net/npm/eruda"
 const val SCRIPT_MANAGER_URL = "data:text/html,ChromeXt-UserScript-Manager"
-const val SCRIPT_MANAGER_ENTRY_URL = "about:ChromeXt"
-const val SCRIPT_MANAGER_LOCAL_URL = "about:blank#chromext-userscripts"
-private val SCRIPT_MANAGER_LEGACY_ENTRIES =
+const val SCRIPT_MANAGER_ENTRY_URL = "about:blank#XT"
+const val SCRIPT_MANAGER_LOCAL_URL = SCRIPT_MANAGER_ENTRY_URL
+private val SCRIPT_MANAGER_LEGACY_NETWORK_ENTRIES =
     setOf("https://chromext.invalid/userscripts", "https://chromext.local/userscripts")
+private val SCRIPT_MANAGER_LEGACY_LOCAL_ENTRIES =
+    setOf("about:blank#chromext-userscripts", "about:chromext", "chrome://chromext")
 private const val DEV_FRONT_END = "https://chrome-devtools-frontend.appspot.com"
 
 fun randomString(length: Int): String {
@@ -131,11 +133,12 @@ fun isScriptManagerEntry(url: String?): Boolean =
 
 fun isLegacyScriptManagerEntry(url: String?): Boolean {
   if (url == null) return false
+
+  val exact = url.removeSuffix("/").lowercase()
+  if (SCRIPT_MANAGER_LEGACY_LOCAL_ENTRIES.contains(exact)) return true
+
   val normalized = url.substringBefore('#').substringBefore('?').removeSuffix("/").lowercase()
-  if (normalized == SCRIPT_MANAGER_ENTRY_URL.lowercase() || normalized == "chrome://chromext") {
-    return true
-  }
-  return SCRIPT_MANAGER_LEGACY_ENTRIES.contains(normalized)
+  return SCRIPT_MANAGER_LEGACY_NETWORK_ENTRIES.contains(normalized)
 }
 
 private val sandboxHosts = listOf("raw.githubusercontent.com", "gist.githubusercontent.com")
