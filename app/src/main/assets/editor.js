@@ -3,6 +3,27 @@ const isSandboxed = [
   "gist.githubusercontent.com",
 ].includes(location.hostname);
 
+let installResultTimer = null;
+
+function showInstallResult(success, message) {
+  let result = document.querySelector("#install-result");
+  if (result == null) {
+    result = document.createElement("div");
+    result.id = "install-result";
+    result.setAttribute("role", "status");
+    result.setAttribute("aria-live", "polite");
+    document.body.append(result);
+  }
+
+  clearTimeout(installResultTimer);
+  result.className = "install-result " + (success ? "success" : "failure");
+  result.textContent = message || (success ? "脚本安装成功" : "脚本安装失败");
+  requestAnimationFrame(() => result.classList.add("show"));
+  installResultTimer = setTimeout(() => {
+    result.classList.remove("show");
+  }, success ? 2200 : 3200);
+}
+
 // 解析脚本元数据，用于在安装界面中展示脚本信息
 function parseScriptMeta(metaText) {
   const info = {
@@ -57,7 +78,30 @@ async function installScript(force = false) {
     const meta = document.querySelector("#meta");
     const code = document.querySelector("#code");
     const script = (meta ? meta.innerText : "") + (code ? code.innerText : "");
-    Symbol.ChromeXt.dispatch("installScript", script);
+    const nativeAlert = window.alert;
+    let failed = false;
+    const installAlert = (message) => {
+      if (String(message) == "Invalid UserScript") {
+        failed = true;
+        showInstallResult(false, "脚本安装失败：脚本格式无效");
+      } else {
+        nativeAlert.call(window, message);
+      }
+    };
+
+    window.alert = installAlert;
+    try {
+      Symbol.ChromeXt.dispatch("installScript", script);
+    } catch (error) {
+      failed = true;
+      showInstallResult(false, "脚本安装失败");
+      console.error("ChromeXt UserScript installation failed", error);
+    }
+
+    setTimeout(() => {
+      if (window.alert === installAlert) window.alert = nativeAlert;
+      if (!failed) showInstallResult(true, "脚本安装成功");
+    }, 500);
   }
 }
 
@@ -189,6 +233,7 @@ function fixDialog() {
   managerLink.setAttribute("aria-label", "打开脚本管理面板");
   managerLink.addEventListener("click", (event) => {
     event.preventDefault();
+    managerLink.blur();
     window.location.href = "about:blank#XT";
   });
   managerHint.append(managerLink, document.createTextNode(" 打开脚本管理面板"));

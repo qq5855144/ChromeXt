@@ -152,6 +152,7 @@ dialog#confirm[open] {
 .manager-link {
   display: inline-block;
   padding: 1px 5px;
+  border: 0;
   border-radius: 6px;
   color: #4f46e5;
   background: #eef2ff;
@@ -160,9 +161,18 @@ dialog#confirm[open] {
   text-decoration-thickness: 1.5px;
   text-underline-offset: 3px;
   cursor: pointer;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent;
 }
 .manager-link:visited {
   color: #4f46e5;
+}
+.manager-link:focus,
+.manager-link:focus-visible {
+  outline: none !important;
+  outline-color: transparent !important;
+  box-shadow: none !important;
 }
 .manager-link:active {
   opacity: 0.72;
@@ -242,6 +252,37 @@ dialog#confirm button:active {
   color: #57606a;
   white-space: pre-wrap;
   text-align: left;
+}
+/* ===== 安装结果提示 ===== */
+.install-result {
+  position: fixed;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 2147483647;
+  min-width: 160px;
+  max-width: calc(100vw - 40px);
+  padding: 11px 18px;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 14px) scale(0.98);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
+}
+.install-result.show {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+.install-result.success {
+  background: rgba(31, 111, 64, 0.96);
+}
+.install-result.failure {
+  background: rgba(185, 28, 28, 0.96);
 }
 /* ===== 语法高亮 ===== */
 [class*="shj-lang-"] {
