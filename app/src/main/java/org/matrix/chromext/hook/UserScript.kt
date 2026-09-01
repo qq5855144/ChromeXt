@@ -11,7 +11,7 @@ import org.matrix.chromext.proxy.UserScriptProxy
 import org.matrix.chromext.script.Local
 import org.matrix.chromext.script.ScriptDbManager
 import org.matrix.chromext.utils.Log
-import org.matrix.chromext.utils.SCRIPT_MANAGER_ENTRY_URL
+import org.matrix.chromext.utils.SCRIPT_MANAGER_LOCAL_URL
 import org.matrix.chromext.utils.findField
 import org.matrix.chromext.utils.findFieldOrNull
 import org.matrix.chromext.utils.findMethod
@@ -118,7 +118,7 @@ object UserScriptHook : BaseHook() {
           }
 
           if (isLegacyScriptManagerEntry(url)) {
-            proxy.loadUrl.invoke(tab, proxy.newLoadUrlParams(SCRIPT_MANAGER_ENTRY_URL))
+            proxy.loadUrl.invoke(tab, proxy.newLoadUrlParams(SCRIPT_MANAGER_LOCAL_URL))
             return@hookAfter
           }
 
@@ -159,8 +159,8 @@ object UserScriptHook : BaseHook() {
         .hookBefore {
           var url = proxy.parseUrl(it.args[0])!!
           if (isLegacyScriptManagerEntry(url)) {
-            it.args[0] = proxy.newLoadUrlParams(SCRIPT_MANAGER_ENTRY_URL)
-            url = SCRIPT_MANAGER_ENTRY_URL
+            it.args[0] = proxy.newLoadUrlParams(SCRIPT_MANAGER_LOCAL_URL)
+            url = SCRIPT_MANAGER_LOCAL_URL
           }
           proxy.userAgentHook(url, it.args[0])
         }
