@@ -33,8 +33,6 @@ object GM {
                 },
                 { it })
 
-    // Compatibility segments intentionally override matching GM.js entries while
-    // all non-overridden grants keep using the stable base implementation.
     localScript = loadSegments("GM.js") + loadSegments("GM_compat.js")
   }
 
@@ -59,8 +57,6 @@ object GM {
         "window.close" -> return@forEach
         else ->
             if (grantNone) {
-              // @grant none is authoritative: do not inject privileged APIs even
-              // if malformed metadata also lists other grants.
               return@forEach
             } else if (localScript.containsKey(it)) {
               grants += localScript.get(it)
@@ -90,9 +86,6 @@ object GM {
     GM_info.put("script", JSONObject().put("id", script.id))
     if (script.storage != null) GM_info.put("storage", script.storage)
 
-    // User code runs in a nested scope so internal bootstrap bindings don't leak
-    // just because a grant was skipped. Granted legacy/modern APIs remain visible
-    // through their dedicated outer declarations.
     val userPrelude = mutableListOf<String>()
     if (!script.grant.contains("GM_info")) userPrelude.add("const GM_info = undefined;")
     if (!script.grant.any { it.startsWith("GM.") }) userPrelude.add("const GM = undefined;")
@@ -117,14 +110,13 @@ object Local {
   val openEruda: String
   val cspRule: String
   val cosmeticFilter: String
+  val userScriptManager: String
   val key = Random.nextDouble()
   val name = randomString(25)
 
   var eruda_version: String?
 
   val anchorInChromeXt: Int
-
-  // lineNumber of the anchor in GM.js, used to verify ChromeXt.dispatch
 
   init {
     val ctx = Chrome.getContext()
@@ -133,6 +125,8 @@ object Local {
         "const _editor_style = ${JSONObject.quote(ctx.assets.open("editor.css").bufferedReader().use { it.readText() })};\n" +
             ctx.assets.open("editor.js").bufferedReader().use { it.readText() }
     customizeDevTool = ctx.assets.open("devtools.js").bufferedReader().use { it.readText() }
+    userScriptManager =
+        ctx.assets.open("userscript_manager.js").bufferedReader().use { it.readText() }
     val css =
         JSONArray(ctx.assets.open("eruda.css").bufferedReader().use { it.readText() }.split("\n\n"))
     eruda =
@@ -153,7 +147,6 @@ object Local {
             .split("// Kotlin separator\n\n")
 
     val seed = Random.nextDouble()
-    // Use empty lines to randomize anchorInChromeXt
     val parts =
         localScript[0]
             .replaceFirst("Symbol.ChromeXt", "Symbol." + name)
