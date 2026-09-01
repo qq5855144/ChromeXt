@@ -118,6 +118,9 @@ object PageMenuHook : BaseHook() {
           val sandBoxed = shouldBypassSandbox(getUrl())
           Chrome.evaluateJavascript(listOf("Symbol.installScript(true);"), null, null, sandBoxed)
         }
+        "org.matrix.chromext:id/manage_scripts_id" -> {
+          Chrome.evaluateJavascript(listOf("location.href='${SCRIPT_MANAGER_URL}';"))
+        }
         "org.matrix.chromext:id/developer_tools_id" -> Listener.on("inspectPages")
         "org.matrix.chromext:id/eruda_console_id" ->
             UserScriptProxy.evaluateJavascript(Local.openEruda)
@@ -253,7 +256,7 @@ object PageMenuHook : BaseHook() {
           MenuInflater(ctx).inflate(R.menu.main_menu, menu)
 
           // Show items with indices in main_menu.xml
-          val toShow = mutableListOf<Int>(1) // Reversed index in main_menu
+          val toShow = mutableListOf<Int>(1, 2) // Reversed index in main_menu
 
           if (isDevToolsFrontEnd(url)) {
             toShow.clear()
@@ -261,7 +264,7 @@ object PageMenuHook : BaseHook() {
 
           if (isUserScript(url)) {
             toShow.clear()
-            toShow.add(2)
+            toShow.add(3)
             if (skip) {
               // Show this menu for local preview pages (Custom Tab) of UserScripts
               items.find { it.itemId == R.id.install_script_id }?.setVisible(true)
@@ -271,13 +274,12 @@ object PageMenuHook : BaseHook() {
 
           if (isChromeXtFrontEnd(url)) {
             toShow.clear()
-            toShow.addAll(listOf(3, 4))
+            toShow.addAll(listOf(4, 5))
           }
 
           if (!Chrome.isVivaldi &&
               ctx.resources.configuration.smallestScreenWidthDp >= DisplayMetrics.DENSITY_XXHIGH &&
-              toShow.size == 1 &&
-              toShow.first() == 1) {
+              toShow.contains(1)) {
             iconRowMenu.setVisible(true)
           }
 
@@ -296,7 +298,7 @@ object PageMenuHook : BaseHook() {
             newMenuItem.setVisible(true)
             items.add(position + 1, newMenuItem)
           }
-          repeat(4) { items.removeAt(items.lastIndex) }
+          repeat(5) { items.removeAt(items.lastIndex) }
         }
 
     // Inflate for MVC UI model
@@ -345,7 +347,7 @@ object PageMenuHook : BaseHook() {
     return findMethod(tabbedAppMenuPropertiesDelegate) {
           parameterTypes.size == 0 && returnType == MVCListAdapter_ModelList
         }
-        // public MVCListAdapter.ModelList buildMenuModelList()
+        // public AppMenuPropertiesDelegate buildMenuModelList()
         .hookAfter {
           val tabProvider = mActivityTabProvider.get(it.thisObject)!!
           Chrome.updateTab(tabProvider.invokeMethod { name == "get" })
@@ -404,6 +406,11 @@ object PageMenuHook : BaseHook() {
                       R.drawable.ic_install_script),
                   buildModelForStandardMenuItem.invoke(
                       it.thisObject,
+                      R.id.manage_scripts_id,
+                      R.string.main_menu_manage_scripts,
+                      R.drawable.ic_install_script),
+                  buildModelForStandardMenuItem.invoke(
+                      it.thisObject,
                       R.id.eruda_console_id,
                       R.string.main_menu_eruda_console,
                       R.drawable.ic_devtools))
@@ -422,6 +429,8 @@ object PageMenuHook : BaseHook() {
           } else {
             menusToAdd.add(
                 itemConstuctor.newInstance(AppMenuItemType.STANDARD.value, localMenus[3]))
+            menusToAdd.add(
+                itemConstuctor.newInstance(AppMenuItemType.STANDARD.value, localMenus[4]))
           }
 
           val injectPosition =
