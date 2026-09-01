@@ -111,6 +111,7 @@ object Local {
   val cspRule: String
   val cosmeticFilter: String
   val userScriptManager: String
+  val userScriptLauncher: String
   val key = Random.nextDouble()
   val name = randomString(25)
 
@@ -127,6 +128,8 @@ object Local {
     customizeDevTool = ctx.assets.open("devtools.js").bufferedReader().use { it.readText() }
     userScriptManager =
         ctx.assets.open("userscript_manager.js").bufferedReader().use { it.readText() }
+    userScriptLauncher =
+        ctx.assets.open("userscript_launcher.js").bufferedReader().use { it.readText() }
     val css =
         JSONArray(ctx.assets.open("eruda.css").bufferedReader().use { it.readText() }.split("\n\n"))
     eruda =
