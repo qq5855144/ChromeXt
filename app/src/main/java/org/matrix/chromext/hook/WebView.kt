@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Build
 import android.os.Handler
 import java.lang.ref.WeakReference
+import org.matrix.chromext.BuildConfig
 import org.matrix.chromext.Chrome
 import org.matrix.chromext.Listener
 import org.matrix.chromext.extension.ExtensionUrl
