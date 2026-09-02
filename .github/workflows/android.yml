@@ -46,6 +46,10 @@ jobs:
             node --check "$file"
           done < <(find app/src/main/assets -type f -name '*.js' -print0)
 
+      - name: Verify extension-only boundary
+        if: ${{ github.ref_name == 'extension-only' || github.base_ref == 'extension-only' }}
+        run: node .github/scripts/test-extension-only-boundary.js
+
       - name: Run unit tests
         run: ./gradlew --stacktrace app:testDebugUnitTest
 
