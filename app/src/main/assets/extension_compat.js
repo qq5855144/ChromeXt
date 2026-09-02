@@ -255,23 +255,31 @@
   }
 
   if (api.tabs) {
-    const safeTab = {
-      id: `cx-${extensionId.slice(0, 8)}`,
-      url: String(runtimeContext.activeUrl || runtimeContext.url || "about:blank"),
-      title: "",
-      active: true,
-      highlighted: true,
-      selected: true,
-      pinned: false,
-      incognito: false,
-      windowId: 0,
-      index: 0,
-      status: "complete",
-    };
+    const suppliedTab = runtimeContext.activeTab && typeof runtimeContext.activeTab === "object"
+      ? clone(runtimeContext.activeTab)
+      : null;
+    const safeTab = Object.assign(
+      {
+        id: runtimeContext.tabId || "",
+        url: String(runtimeContext.activeUrl || runtimeContext.url || "about:blank"),
+        title: "",
+        active: true,
+        highlighted: true,
+        selected: true,
+        pinned: false,
+        incognito: false,
+        windowId: 0,
+        index: 0,
+        status: "complete",
+      },
+      suppliedTab || {}
+    );
+    if (!safeTab.url) safeTab.url = String(runtimeContext.activeUrl || runtimeContext.url || "about:blank");
+
     const matchesQuery = (query = {}) => {
       if (query.active === false || query.highlighted === false) return false;
       if (query.pinned === true || query.incognito === true) return false;
-      if (query.windowId != null && Number(query.windowId) !== 0) return false;
+      if (query.windowId != null && Number(query.windowId) !== Number(safeTab.windowId || 0)) return false;
       const urls = query.url == null ? [] : Array.isArray(query.url) ? query.url : [query.url];
       if (!urls.length) return true;
       return urls.some((pattern) => {
@@ -287,7 +295,7 @@
     };
 
     // Do not synchronously enumerate DevTools pages merely because a popup/background asks for
-    // the active tab. Browser variants can block their UI thread while DevTools is being woken.
+    // the active tab. The tab snapshot is captured from the real browser-owned page lifecycle.
     api.tabs.query = (query, callback) => result(matchesQuery(query) ? [safeTab] : [], callback);
     api.tabs.getCurrent = (callback) => result(safeTab, callback);
     api.tabs.get = (tabId, callback) =>
