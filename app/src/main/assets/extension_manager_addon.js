@@ -60,7 +60,7 @@
       folderBusy = false;
       if (button) {
         button.disabled = false;
-        button.textContent = "导入文件夹";
+        button.textContent = "导入本地文件夹";
       }
       showToast(`扩展导入失败：${error?.message || error}`, true);
     }
@@ -77,7 +77,7 @@
     button.id = "cx-import-extension-folder";
     button.type = "button";
     button.className = "cx-action cx-install";
-    button.textContent = "导入文件夹";
+    button.textContent = "导入本地文件夹";
     const input = document.createElement("input");
     input.id = "cx-extension-folder";
     input.type = "file";
@@ -220,7 +220,7 @@
       const button = document.getElementById("cx-import-extension-folder");
       if (button) {
         button.disabled = false;
-        button.textContent = "导入文件夹";
+        button.textContent = "导入本地文件夹";
       }
     });
   };
