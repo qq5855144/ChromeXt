@@ -67,6 +67,11 @@ contains(
   "MutationObserver",
   "Dock must survive SPA removal of its host"
 );
+contains(
+  dock,
+  'document.querySelector("script[nonce],style[nonce]")',
+  "Dock must inherit a compatible CSP nonce when one exists"
+);
 
 contains(local, 'ctx.assets\n            .open("script_dock.js")', "Local must load script_dock.js");
 contains(
@@ -86,8 +91,18 @@ contains(
 );
 contains(
   manager,
-  'codes.add(Local.scriptDock.replace("ChromeXtDockInitialY", dockY.toString()))',
+  'Local.scriptDock.replace("ChromeXtDockInitialY", dockY.toString())',
   "Native injection must pass the persisted vertical position"
+);
+contains(
+  manager,
+  "if(document.documentElement){bootChromeXtScriptDock();}",
+  "Dock should start immediately when the document root exists"
+);
+contains(
+  manager,
+  "document.addEventListener('DOMContentLoaded',bootChromeXtScriptDock,{once:true})",
+  "Dock must defer safely on very early WebView injection"
 );
 
 console.log("UserScript Script Dock regression checks passed");
