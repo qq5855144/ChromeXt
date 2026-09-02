@@ -40,10 +40,12 @@ object ExtensionPopup {
                   .put("contextId", "popup:$token")
           val prelude = buildPrelude(manifest, context, token)
           val document = injectHead(html, directoryUrl, prelude)
+          val displayName =
+              ExtensionLocale.resolve(id, manifest, manifest.optString("name", id))
           JSONObject()
               .put("ok", true)
               .put("id", id)
-              .put("name", manifest.optString("name", id))
+              .put("name", displayName)
               .put("popupUrl", popupUrl)
               .put("token", token)
               .put("document", document)
@@ -71,6 +73,19 @@ object ExtensionPopup {
         const __cxExtension=${manifest};
         const __cxContext=${context};
         const __cxListeners=new Map();
+        const __cxResolveExtensionUrl=(value)=>{
+          const text=String(value==null?'':value);
+          const match=/^chrome-extension:\/\/[a-p]{32}\/(.*)$/i.exec(text);
+          return match&&__cxExtension.baseUrl?__cxExtension.baseUrl+match[1]:text;
+        };
+        const __cxOpen=window.open.bind(window);
+        window.open=(url,...args)=>__cxOpen(__cxResolveExtensionUrl(url),...args);
+        document.addEventListener('click',(event)=>{
+          const anchor=event.target&&event.target.closest?event.target.closest('a[href]'):null;
+          if(!anchor)return;
+          const resolved=__cxResolveExtensionUrl(anchor.getAttribute('href'));
+          if(resolved!==anchor.getAttribute('href'))anchor.setAttribute('href',resolved);
+        },true);
         const __cxNative={
           dispatch(action,payload){
             __cxTarget.postMessage({__chromextExtensionFrame:true,direction:'dispatch',token:__cxToken,extensionId:${JSONObject.quote(id)},action,payload},'*');

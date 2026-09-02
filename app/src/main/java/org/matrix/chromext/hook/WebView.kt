@@ -4,8 +4,10 @@ import android.app.Activity
 import android.os.Build
 import android.os.Handler
 import java.lang.ref.WeakReference
+import org.matrix.chromext.BuildConfig
 import org.matrix.chromext.Chrome
 import org.matrix.chromext.Listener
+import org.matrix.chromext.extension.ExtensionUrl
 import org.matrix.chromext.script.Local
 import org.matrix.chromext.script.ScriptDbManager
 import org.matrix.chromext.utils.Log
@@ -73,8 +75,23 @@ object WebViewHook : BaseHook() {
     fun onUpdateUrl(url: String, view: Any?) {
       if (url.startsWith("javascript") || view == null) return
       Chrome.updateTab(view)
+      ExtensionUrl.resolve(url)?.let { resolved ->
+        view.invokeMethod(resolved) { name == "loadUrl" && parameterCount == 1 }
+        return
+      }
       ScriptDbManager.invokeScript(url, view)
     }
+
+    runCatching {
+          findMethod(WebView!!) {
+            name == "loadUrl" && parameterTypes.size == 1 && parameterTypes[0] == String::class.java
+          }
+              .hookBefore {
+                val url = it.args[0] as? String ?: return@hookBefore
+                ExtensionUrl.resolve(url)?.let { resolved -> it.args[0] = resolved }
+              }
+        }
+        .onFailure { if (BuildConfig.DEBUG) Log.ex(it) }
 
     findMethod(WebView!!) { name == "setWebChromeClient" }
         .hookAfter {

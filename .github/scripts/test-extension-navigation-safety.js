@@ -19,6 +19,18 @@ const popupHost = fs.readFileSync(
   "app/src/main/java/org/matrix/chromext/extension/ExtensionPopup.kt",
   "utf8"
 );
+const extensionUrl = fs.readFileSync(
+  "app/src/main/java/org/matrix/chromext/extension/ExtensionUrl.kt",
+  "utf8"
+);
+const userScriptHook = fs.readFileSync(
+  "app/src/main/java/org/matrix/chromext/hook/UserScript.kt",
+  "utf8"
+);
+const webViewHook = fs.readFileSync(
+  "app/src/main/java/org/matrix/chromext/hook/WebView.kt",
+  "utf8"
+);
 const ui = fs.readFileSync("app/src/main/assets/userscript_manager.js", "utf8");
 const addon = fs.readFileSync(
   "app/src/main/assets/extension_manager_addon.js",
@@ -111,6 +123,29 @@ assert.ok(
 );
 
 assert.ok(
+  extensionUrl.includes('PREFIX = "chrome-extension://"') &&
+    extensionUrl.includes("LocalFiles.managementList()") &&
+    extensionUrl.includes("manifestDerivedId") &&
+    extensionUrl.includes("declaresPage") &&
+    extensionUrl.includes("registerAlias"),
+  "ChromeXt must resolve standard chrome-extension URLs, including legacy-id recovery"
+);
+assert.ok(
+  userScriptHook.includes("ExtensionUrl.resolve(url)") &&
+    userScriptHook.includes("proxy.newLoadUrlParams(resolved)"),
+  "Chromium navigation must rewrite chrome-extension URLs before the browser rejects them"
+);
+assert.ok(
+  webViewHook.includes("ExtensionUrl.resolve(url)") && webViewHook.includes('name == "loadUrl"'),
+  "WebView hosts must rewrite chrome-extension URLs onto the loopback resource server"
+);
+assert.ok(
+  remoteInstaller.includes("ExtensionUrl.registerAlias(sourceId, internalId)") &&
+    remoteInstaller.includes("webStoreId(source)"),
+  "Chrome Web Store installs must remember the public extension id for virtual URL routing"
+);
+
+assert.ok(
   ui.includes('id="cx-import-userscript"') && ui.includes("importUserScripts"),
   "manager must expose local UserScript import"
 );
@@ -170,4 +205,4 @@ assert.ok(
   "manager must load the reliable extension installer layer"
 );
 
-console.log("Extension navigation, runtime, popup and installation safety checks passed");
+console.log("Extension navigation, runtime, virtual URL, popup and installation safety checks passed");

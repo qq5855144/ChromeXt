@@ -19,6 +19,7 @@ object RemoteExtensionInstaller {
   fun install(source: String): JSONObject {
     val resolved = resolveSource(source)
         ?: return failure("请输入有效的 HTTPS/HTTP 扩展地址或 Chrome Web Store 地址")
+    val sourceId = webStoreId(source)
     val token = "remote-${UUID.randomUUID()}"
     val name = sourceName(source, resolved)
     val started = LocalFiles.beginInstall(token, name)
@@ -44,9 +45,15 @@ object RemoteExtensionInstaller {
           }
         }
         if (total == 0) return failure("扩展安装失败：下载内容为空")
-        val result = LocalFiles.finishInstall(token)
-            .put("sourceUrl", source)
-            .put("resolvedUrl", resolved.toString())
+        val result =
+            LocalFiles.finishInstall(token)
+                .put("sourceUrl", source)
+                .put("resolvedUrl", resolved.toString())
+        if (result.optBoolean("ok") && sourceId != null) {
+          val internalId = result.optJSONObject("extension")?.optString("id")
+          ExtensionUrl.registerAlias(sourceId, internalId)
+          result.put("webStoreId", sourceId)
+        }
         completed = true
         result
       } finally {
@@ -97,20 +104,25 @@ object RemoteExtensionInstaller {
     if (text.isEmpty()) return null
     val uri = runCatching { URI(text) }.getOrNull() ?: return null
     if (uri.scheme != "https" && uri.scheme != "http") return null
-    val host = uri.host?.lowercase() ?: return null
-    if (host == "chromewebstore.google.com" || host == "chrome.google.com") {
-      val id = Regex("[a-p]{32}", RegexOption.IGNORE_CASE)
-          .findAll(uri.path ?: "")
-          .lastOrNull()
-          ?.value
-          ?.lowercase()
-          ?: return null
+    val id = webStoreId(text)
+    if (id != null) {
       val x = URLEncoder.encode("id=$id&installsource=ondemand&uc", "UTF-8")
       return URL(
           "https://clients2.google.com/service/update2/crx" +
               "?response=redirect&prodversion=130.0.0.0&acceptformat=crx2,crx3&x=$x")
     }
     return runCatching { uri.toURL() }.getOrNull()
+  }
+
+  private fun webStoreId(input: String): String? {
+    val uri = runCatching { URI(input.trim()) }.getOrNull() ?: return null
+    val host = uri.host?.lowercase() ?: return null
+    if (host != "chromewebstore.google.com" && host != "chrome.google.com") return null
+    return Regex("[a-p]{32}", RegexOption.IGNORE_CASE)
+        .findAll(uri.path ?: "")
+        .lastOrNull()
+        ?.value
+        ?.lowercase()
   }
 
   private fun sourceName(source: String, resolved: URL): String {

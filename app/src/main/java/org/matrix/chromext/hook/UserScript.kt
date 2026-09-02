@@ -7,6 +7,7 @@ import android.net.http.HttpResponseCache
 import org.matrix.chromext.BuildConfig
 import org.matrix.chromext.Chrome
 import org.matrix.chromext.Listener
+import org.matrix.chromext.extension.ExtensionUrl
 import org.matrix.chromext.proxy.UserScriptProxy
 import org.matrix.chromext.script.Local
 import org.matrix.chromext.script.ScriptDbManager
@@ -117,6 +118,11 @@ object UserScriptHook : BaseHook() {
             url = proxy.parseUrl(proxy.getUrl(tab))!!
           }
 
+          ExtensionUrl.resolve(url)?.let { resolved ->
+            proxy.loadUrl.invoke(tab, proxy.newLoadUrlParams(resolved))
+            return@hookAfter
+          }
+
           if (isLegacyScriptManagerEntry(url)) {
             proxy.loadUrl.invoke(tab, proxy.newLoadUrlParams(SCRIPT_MANAGER_LOCAL_URL))
             return@hookAfter
@@ -158,6 +164,10 @@ object UserScriptHook : BaseHook() {
         // public void loadUrl(LoadUrlParams params)
         .hookBefore {
           var url = proxy.parseUrl(it.args[0])!!
+          ExtensionUrl.resolve(url)?.let { resolved ->
+            it.args[0] = proxy.newLoadUrlParams(resolved)
+            url = resolved
+          }
           if (isLegacyScriptManagerEntry(url)) {
             it.args[0] = proxy.newLoadUrlParams(SCRIPT_MANAGER_LOCAL_URL)
             url = SCRIPT_MANAGER_LOCAL_URL
