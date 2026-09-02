@@ -9,6 +9,7 @@ import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.extension.LocalFiles
 import org.matrix.chromext.utils.Log
 import org.matrix.chromext.utils.invokeMethod
 import org.matrix.chromext.utils.isChromeXtFrontEnd
@@ -195,6 +196,8 @@ object ScriptDbManager {
             if (it.grant.contains("frames")) framesGranted = true
             GM.bootstrap(it, codes)
           }
+      codes.addAll(LocalFiles.bootstrap(url, frameId))
+      if (frameId == null && LocalFiles.hasAllFrames(url)) framesGranted = true
       if (!asyncEvaluation) Chrome.evaluateJavascript(codes, webView, frameId)
     }
     if (asyncEvaluation)
