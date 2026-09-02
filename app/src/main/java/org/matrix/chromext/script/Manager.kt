@@ -9,6 +9,7 @@ import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.extension.ExtensionBackgroundHost
 import org.matrix.chromext.extension.ExtensionPages
 import org.matrix.chromext.extension.ExtensionRunAt
 import org.matrix.chromext.extension.LocalFiles
@@ -202,8 +203,9 @@ object ScriptDbManager {
             if (it.grant.contains("frames")) framesGranted = true
             GM.bootstrap(it, codes)
           }
-      val extensionCodes = ExtensionRunAt.schedule(LocalFiles.bootstrap(url, frameId), url, frameId)
-      codes.addAll(extensionCodes)
+      val generated = LocalFiles.bootstrap(url, frameId).filterNot { it.contains("/background") }
+      codes.addAll(ExtensionRunAt.schedule(generated, url, frameId))
+      if (frameId == null) codes.addAll(ExtensionBackgroundHost.bootstrap(url))
       if (frameId == null && LocalFiles.hasAllFrames(url)) framesGranted = true
       if (!asyncEvaluation) Chrome.evaluateJavascript(codes, webView, frameId)
     }
