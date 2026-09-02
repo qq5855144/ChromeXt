@@ -6,7 +6,7 @@ import org.matrix.chromext.script.Local
 
 object ExtensionBridge {
   private fun managerEvent(name: String, detail: Any): String =
-      "ChromeXt.post('$name', ${JSONObject.valueToString(detail)});"
+      "ChromeXt.post('$name', ${detail.toString()});"
 
   fun manager(payload: String): String {
     if (payload.isBlank()) return managerEvent("extension_list", LocalFiles.managementList())
