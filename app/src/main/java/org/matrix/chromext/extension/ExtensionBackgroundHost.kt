@@ -16,8 +16,8 @@ import org.matrix.chromext.utils.Log
 object ExtensionBackgroundHost {
   private val hosts = ConcurrentHashMap<String, String>()
 
-  fun bootstrap(url: String): List<String> {
-    val currentHost = currentTabId(url)
+  fun bootstrap(url: String, hostTab: Any? = null): List<String> {
+    val currentHost = currentTabId(url, hostTab)
     cleanupHosts()
     val directory = File(Chrome.getContext().getExternalFilesDir(null), "Extension")
     val result = mutableListOf<String>()
@@ -42,9 +42,11 @@ object ExtensionBackgroundHost {
     hosts.remove(id)
   }
 
-  private fun currentTabId(url: String): String =
-      runCatching { Chrome.getTabId(Chrome.getTab(), url) }
-          .getOrElse { "fallback:${System.identityHashCode(Chrome.getTab())}:$url" }
+  private fun currentTabId(url: String, hostTab: Any?): String {
+    val target = Chrome.getTab(hostTab)
+    return runCatching { Chrome.getTabId(target, url) }
+        .getOrElse { "fallback:${System.identityHashCode(target)}:$url" }
+  }
 
   private fun cleanupHosts() {
     val pages = runCatching { getInspectPages() }.getOrNull() ?: return
