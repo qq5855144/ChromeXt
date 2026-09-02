@@ -1,6 +1,8 @@
 package org.matrix.chromext.extension
 
+import java.lang.ref.WeakReference
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
@@ -9,6 +11,10 @@ import org.matrix.chromext.script.Local
 import org.matrix.chromext.utils.Log
 
 object ExtensionBridge {
+  private data class MessageRoute(val tab: WeakReference<Any>, val frameId: String?)
+
+  private val messageRoutes = ConcurrentHashMap<String, MessageRoute>()
+
   private fun managerEvent(name: String, detail: Any): String =
       "ChromeXt.post('$name', ${detail.toString()});"
 
@@ -57,6 +63,13 @@ object ExtensionBridge {
     val data = JSONObject(payload)
     return when (data.optString("op")) {
       "list" -> managerEvent("extension_list", LocalFiles.managementList())
+      "popup" -> {
+        val id = data.getString("id")
+        val prepared = ExtensionBackgroundHost.prepare(id, Chrome.getTab())
+        if (prepared?.bootstrap != null)
+            Chrome.evaluateJavascript(listOf(prepared.bootstrap), prepared.tab)
+        managerEvent("extension_popup", ExtensionPopup.document(id))
+      }
       "setEnabled" -> {
         val id = data.getString("id")
         val enabled = data.getBoolean("enabled")
@@ -145,9 +158,13 @@ object ExtensionBridge {
     }
   }
 
+  private fun syntheticTabId(tab: Any?): String {
+    val resolved = Chrome.getTab(tab) ?: return ""
+    return "cx-${System.identityHashCode(resolved)}"
+  }
+
   private fun sender(extensionId: String, currentTab: Any?, frameId: String?): JSONObject {
     val url = Chrome.getUrl(currentTab) ?: ""
-    val tabId = runCatching { Chrome.getTabId(currentTab, url) }.getOrDefault("")
     return JSONObject()
         .put("id", extensionId)
         .put("url", url)
@@ -155,18 +172,35 @@ object ExtensionBridge {
         .put(
             "tab",
             JSONObject()
-                .put("id", tabId)
+                .put("id", syntheticTabId(currentTab))
                 .put("url", url)
                 .put("active", currentTab == Chrome.getTab()))
+  }
+
+  private fun eventCode(event: String, detail: JSONObject): String =
+      "Symbol.${Local.name}.unlock(${Local.key}).post(${JSONObject.quote(event)},${detail});"
+
+  private fun deliverDirect(
+      tab: Any?,
+      event: String,
+      detail: JSONObject,
+      frameId: String? = null,
+      bootstrap: String? = null,
+  ): Boolean {
+    val target = Chrome.getTab(tab) ?: return false
+    if (!runCatching { Chrome.checkTab(target) }.getOrDefault(false)) return false
+    val codes = mutableListOf<String>()
+    if (!bootstrap.isNullOrBlank()) codes.add(bootstrap)
+    codes.add(eventCode(event, detail))
+    Chrome.evaluateJavascript(codes, target, frameId)
+    return true
   }
 
   private fun deliverToTab(tabId: String, event: String, detail: JSONObject): Boolean {
     if (tabId.isBlank()) return false
     return runCatching {
-          val code =
-              "Symbol.${Local.name}.unlock(${Local.key}).post(${JSONObject.quote(event)},${detail});"
           val client = DevSessions.new(tabId, "extension-message")
-          client.evaluateJavascript(code)
+          client.evaluateJavascript(eventCode(event, detail))
           client.close()
           true
         }
@@ -176,18 +210,29 @@ object ExtensionBridge {
         }
   }
 
+  private fun rememberRoute(messageId: String, currentTab: Any?, frameId: String?) {
+    val tab = Chrome.getTab(currentTab) ?: return
+    if (messageId.isNotBlank()) messageRoutes[messageId] = MessageRoute(WeakReference(tab), frameId)
+  }
+
+  private fun deliverMessageResponse(extensionId: String, messageId: String, value: Any?): Boolean {
+    val route = messageRoutes.remove(messageId) ?: return false
+    val tab = route.tab.get() ?: return false
+    val detail =
+        JSONObject()
+            .put("extensionId", extensionId)
+            .put("messageId", messageId)
+            .put("value", value ?: JSONObject.NULL)
+    return deliverDirect(tab, "cx_extension_message_response", detail, route.frameId)
+  }
+
   private fun messageResult(request: JSONObject, currentTab: Any?, frameId: String?): JSONObject {
     val extensionId = request.getString("extensionId")
     val api = request.optString("api")
     val args = request.optJSONArray("args") ?: JSONArray()
     val messageId = request.optString("messageId", request.optString("requestId"))
     if (api == "runtime.sendMessageResponse") {
-      val detail =
-          JSONObject()
-              .put("extensionId", extensionId)
-              .put("messageId", messageId)
-              .put("value", args.opt(0) ?: JSONObject.NULL)
-      Chrome.broadcast("cx_extension_message_response", detail, false) { true }
+      deliverMessageResponse(extensionId, messageId, args.opt(0))
       return JSONObject().put("ok", true).put("value", JSONObject.NULL)
     }
 
@@ -203,13 +248,26 @@ object ExtensionBridge {
             .put("message", message ?: JSONObject.NULL)
             .put("sender", sender(extensionId, currentTab, frameId))
 
-    if (isTabMessage) {
-      val targetTabId = args.optString(0)
-      if (!deliverToTab(targetTabId, "cx_extension_message", detail)) {
-        return JSONObject().put("ok", false).put("error", "Target tab is not available")
-      }
-    } else {
-      Chrome.broadcast("cx_extension_message", detail, false) { true }
+    rememberRoute(messageId, currentTab, frameId)
+    val delivered =
+        if (isTabMessage) {
+          deliverToTab(args.optString(0), "cx_extension_message", detail)
+        } else {
+          val prepared = ExtensionBackgroundHost.prepare(extensionId, currentTab)
+          if (prepared != null) {
+            deliverDirect(
+                prepared.tab,
+                "cx_extension_message",
+                detail,
+                bootstrap = prepared.bootstrap)
+          } else {
+            deliverDirect(currentTab, "cx_extension_message", detail, frameId)
+          }
+        }
+
+    if (!delivered) {
+      messageRoutes.remove(messageId)
+      return JSONObject().put("ok", false).put("error", "Extension message target is not available")
     }
     return JSONObject().put("ok", true).put("value", JSONObject.NULL)
   }
