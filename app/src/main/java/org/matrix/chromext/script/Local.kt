@@ -135,6 +135,12 @@ object Local {
             .use { it.readText() }
             .replace("Symbol.ChromeXtDockAccess", "Symbol." + name)
             .replace("ChromeXtDockKey", key.toString())
+            // New-window navigation to about:blank#XT is unreliable in several Android browsers:
+            // the popup may be blocked or the fragment can be applied as a same-document change.
+            // Keep the manager in the current real tab so the existing navigation hooks always see it.
+            .replace(
+                "opened = window.open(MANAGER_URL, \"_blank\");",
+                "window.location.assign(MANAGER_URL); opened = true;")
     val css =
         JSONArray(ctx.assets.open("eruda.css").bufferedReader().use { it.readText() }.split("\n\n"))
     eruda =
