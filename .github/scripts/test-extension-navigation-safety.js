@@ -12,6 +12,10 @@ const pages = fs.readFileSync(
   "utf8"
 );
 const ui = fs.readFileSync("app/src/main/assets/userscript_manager.js", "utf8");
+const addon = fs.readFileSync(
+  "app/src/main/assets/extension_manager_addon.js",
+  "utf8"
+);
 const listener = fs.readFileSync(
   "app/src/main/java/org/matrix/chromext/Listener.kt",
   "utf8"
@@ -38,6 +42,10 @@ assert.ok(
 assert.ok(
   ui.includes('id="cx-install-extension"') && ui.includes("导入本地 ZIP/CRX"),
   "manager must expose local ZIP/CRX extension import"
+);
+assert.ok(
+  addon.includes('id = "cx-import-extension-folder"') && addon.includes("导入本地文件夹"),
+  "manager must expose local unpacked extension folder import"
 );
 assert.ok(
   listener.includes('data.optBoolean("import")') && listener.includes("userscript_import"),
