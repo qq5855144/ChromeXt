@@ -126,7 +126,9 @@ object Local {
             ctx.assets.open("editor.js").bufferedReader().use { it.readText() }
     customizeDevTool = ctx.assets.open("devtools.js").bufferedReader().use { it.readText() }
     userScriptManager =
-        ctx.assets.open("userscript_manager.js").bufferedReader().use { it.readText() }
+        ctx.assets.open("userscript_manager.js").bufferedReader().use { it.readText() } +
+            "\n" +
+            ctx.assets.open("extension_manager_addon.js").bufferedReader().use { it.readText() }
     val css =
         JSONArray(ctx.assets.open("eruda.css").bufferedReader().use { it.readText() }.split("\n\n"))
     eruda =

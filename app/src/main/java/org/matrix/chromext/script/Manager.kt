@@ -9,6 +9,11 @@ import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.extension.ExtensionBackgroundHost
+import org.matrix.chromext.extension.ExtensionDynamicScripts
+import org.matrix.chromext.extension.ExtensionPages
+import org.matrix.chromext.extension.ExtensionRunAt
+import org.matrix.chromext.extension.LocalFiles
 import org.matrix.chromext.utils.Log
 import org.matrix.chromext.utils.invokeMethod
 import org.matrix.chromext.utils.isChromeXtFrontEnd
@@ -134,10 +139,13 @@ object ScriptDbManager {
     var trustedPage = true
     var runScripts = false
     var bypassSandbox = false
+    val extensionPageScript = ExtensionPages.bootstrap(url)
 
     fixEncoding(url, path, codes)
 
-    if (isUserScript(url, path)) {
+    if (extensionPageScript != null) {
+      trustedPage = false
+    } else if (isUserScript(url, path)) {
       trustedPage = false
       codes.add(Local.promptInstallUserScript)
       bypassSandbox = shouldBypassSandbox(url)
@@ -173,8 +181,9 @@ object ScriptDbManager {
 
     if (trustedPage) {
       codes.add("globalThis.ChromeXt = Symbol.ChromeXt;")
-    } else if (runScripts) {
+    } else if (runScripts || extensionPageScript != null) {
       codes.add("Symbol.ChromeXt.lock(${Local.key}, '${Local.name}');")
+      if (extensionPageScript != null) codes.add(extensionPageScript)
     }
     codes.add("//# sourceURL=local://ChromeXt/init" + if (frameId == null) "" else "/" + frameId)
     webSettings?.invokeMethod(true) { name == "setJavaScriptEnabled" }
@@ -195,6 +204,15 @@ object ScriptDbManager {
             if (it.grant.contains("frames")) framesGranted = true
             GM.bootstrap(it, codes)
           }
+      val generated = LocalFiles.bootstrap(url, frameId).filterNot { it.contains("/background") }
+      codes.addAll(ExtensionRunAt.schedule(generated, url, frameId))
+      codes.addAll(ExtensionDynamicScripts.bootstrap(url, frameId))
+      if (frameId == null) codes.addAll(ExtensionBackgroundHost.bootstrap(url, webView))
+      if (
+          frameId == null &&
+              (LocalFiles.hasAllFrames(url) || ExtensionDynamicScripts.hasAllFrames(url))) {
+        framesGranted = true
+      }
       if (!asyncEvaluation) Chrome.evaluateJavascript(codes, webView, frameId)
     }
     if (asyncEvaluation)
