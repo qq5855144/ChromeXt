@@ -286,9 +286,9 @@
     }
   `;
 
-  const iconMenu = `
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-      <path d="M5 7h14M5 12h14M5 17h14"/>
+  const iconTampermonkey = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M5.955.002C3-.071.275 2.386.043 5.335c-.069 3.32-.011 6.646-.03 9.969.06 1.87-.276 3.873.715 5.573 1.083 2.076 3.456 3.288 5.77 3.105 4.003-.011 8.008.022 12.011-.017 2.953-.156 5.478-2.815 5.482-5.772-.007-4.235.023-8.473-.015-12.708C23.82 2.533 21.16.007 18.205.003c-4.083-.005-8.167 0-12.25-.002zm.447 12.683c2.333-.046 4.506 1.805 4.83 4.116.412 2.287-1.056 4.716-3.274 5.411-2.187.783-4.825-.268-5.874-2.341-1.137-2.039-.52-4.827 1.37-6.197a4.9 4.9 0 0 1 2.948-.99zm11.245 0c2.333-.046 4.505 1.805 4.829 4.116.413 2.287-1.056 4.716-3.273 5.411-2.188.783-4.825-.268-5.875-2.341-1.136-2.039-.52-4.827 1.37-6.197a4.9 4.9 0 0 1 2.949-.99z"/>
     </svg>`;
   const iconManager = `
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
@@ -309,7 +309,7 @@
   dockButton.className = "cx-dock-button";
   dockButton.setAttribute("aria-label", "ChromeXt 脚本");
   dockButton.title = "ChromeXt 脚本";
-  dockButton.innerHTML = `<span class="cx-dock-orb">${iconMenu}</span>`;
+  dockButton.innerHTML = `<span class="cx-dock-orb">${iconTampermonkey}</span>`;
 
   const backdrop = document.createElement("div");
   backdrop.className = "cx-backdrop";
@@ -616,11 +616,14 @@
     state.dragStartY = null;
     state.dragging = false;
     dockButton.classList.remove("cx-dragging");
-    if (cancelled) {
-      scheduleRetract(900);
-    } else if (wasDragging) {
+    // Android Chromium/WebView can emit pointercancel when the browser takes over a
+    // gesture. The button has already reached a valid position, so remember it just
+    // like a normal pointerup instead of silently reverting on the next page.
+    if (wasDragging) {
       persistPosition();
-      scheduleRetract(1100);
+      scheduleRetract(cancelled ? 900 : 1100);
+    } else if (cancelled) {
+      scheduleRetract(900);
     } else if (!state.open) {
       openPanel();
     } else {
@@ -646,6 +649,7 @@
     dockButton.addEventListener("pointermove", onPointerMove);
     dockButton.addEventListener("pointerup", (event) => finishPointer(event));
     dockButton.addEventListener("pointercancel", (event) => finishPointer(event, true));
+    dockButton.addEventListener("lostpointercapture", (event) => finishPointer(event, true));
   } else {
     let mouseDown = false;
     let touchActive = false;

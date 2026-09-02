@@ -54,8 +54,33 @@ contains(
 );
 contains(
   dock,
+  "ChromeXtDockInitialY",
+  "Dock must restore the persisted vertical position during injection"
+);
+contains(
+  dock,
   'name: "filters"',
   "Dock must persist its position through ChromeXt syncData"
+);
+contains(
+  dock,
+  "if (wasDragging) {\n      persistPosition();",
+  "Dock must save a completed or cancelled Android drag"
+);
+contains(
+  dock,
+  'addEventListener("lostpointercapture"',
+  "Dock must finish and save a drag when pointer capture is lost"
+);
+contains(
+  dock,
+  "M5.955.002C3-.071.275 2.386.043 5.335",
+  "Dock must embed the supplied Tampermonkey icon"
+);
+contains(
+  dock,
+  '${iconTampermonkey}',
+  "Floating dock button must render the Tampermonkey icon"
 );
 contains(
   dock,

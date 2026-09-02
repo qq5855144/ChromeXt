@@ -17,8 +17,9 @@ The `master` UserScript product line exposes a universal in-page Script Dock on 
 - The first icon is the ChromeXt UserScript manager (`about:blank#XT`).
 - Remaining icons are running UserScripts. The first-level sheet intentionally shows icons only.
 - Selecting a script opens its registered menu commands.
+- The edge button uses an embedded Tampermonkey icon and does not depend on an external image request.
 - Dragging the edge button changes its vertical position.
-- Position is persisted globally through ChromeXt's existing `syncData`/SharedPreferences path using the reserved, non-page origin `chromext-internal://script-dock`.
+- Position is persisted globally through ChromeXt's existing `syncData`/SharedPreferences path using the reserved, non-page origin `chromext-internal://script-dock`, including Android gestures that end with `pointercancel` or lost pointer capture.
 - `visualViewport`, resize, orientation and fullscreen changes are handled so the control stays reachable around the soft keyboard and media fullscreen.
 
 ## Browser compatibility
