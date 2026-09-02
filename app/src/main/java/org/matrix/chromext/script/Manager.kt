@@ -9,7 +9,6 @@ import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
-import org.matrix.chromext.extension.ExtensionBackgroundHost
 import org.matrix.chromext.extension.ExtensionDynamicScripts
 import org.matrix.chromext.extension.ExtensionPages
 import org.matrix.chromext.extension.ExtensionRunAt
@@ -204,10 +203,13 @@ object ScriptDbManager {
             if (it.grant.contains("frames")) framesGranted = true
             GM.bootstrap(it, codes)
           }
+
+      // Extension content scripts remain page-scoped and only run when their match patterns apply.
+      // Do not start extension background/service-worker compatibility hosts from normal page
+      // navigation: the old path synchronously probed DevTools and could block the browser UI.
       val generated = LocalFiles.bootstrap(url, frameId).filterNot { it.contains("/background") }
       codes.addAll(ExtensionRunAt.schedule(generated, url, frameId))
       codes.addAll(ExtensionDynamicScripts.bootstrap(url, frameId))
-      if (frameId == null) codes.addAll(ExtensionBackgroundHost.bootstrap(url, webView))
       if (
           frameId == null &&
               (LocalFiles.hasAllFrames(url) || ExtensionDynamicScripts.hasAllFrames(url))) {

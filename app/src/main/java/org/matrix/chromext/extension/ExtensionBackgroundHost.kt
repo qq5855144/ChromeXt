@@ -5,20 +5,24 @@ import java.io.FileReader
 import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
-import org.matrix.chromext.devtools.getInspectPages
 import org.matrix.chromext.script.Local
 import org.matrix.chromext.utils.Log
 
 /**
- * Keeps one background/service-worker compatibility context active for each enabled extension.
- * The context is hosted inside one top-level browser page and migrates when that tab disappears.
+ * Compatibility host for extension background code.
+ *
+ * Background code must never be started as part of a normal website navigation. In particular, do
+ * not synchronously discover DevTools pages or resolve Chromium tab ids here: those operations can
+ * block the browser UI on WebView-based hosts. A compatibility background may only be hosted from
+ * one of ChromeXt's local loopback extension pages.
  */
 object ExtensionBackgroundHost {
   private val hosts = ConcurrentHashMap<String, String>()
 
   fun bootstrap(url: String, hostTab: Any? = null): List<String> {
-    val currentHost = currentTabId(url, hostTab)
-    cleanupHosts()
+    if (!isLocalExtensionResource(url)) return emptyList()
+
+    val currentHost = "local:${System.identityHashCode(Chrome.getTab(hostTab))}"
     val directory = File(Chrome.getContext().getExternalFilesDir(null), "Extension")
     val result = mutableListOf<String>()
     val manifests = LocalFiles.managementList()
@@ -42,25 +46,12 @@ object ExtensionBackgroundHost {
     hosts.remove(id)
   }
 
-  private fun currentTabId(url: String, hostTab: Any?): String {
-    val target = Chrome.getTab(hostTab)
-    return runCatching { Chrome.getTabId(target, url) }
-        .getOrElse { "fallback:${System.identityHashCode(target)}:$url" }
-  }
-
-  private fun cleanupHosts() {
-    val pages = runCatching { getInspectPages() }.getOrNull() ?: return
-    val live = mutableSetOf<String>()
-    for (i in 0 until pages.length()) {
-      val page = pages.optJSONObject(i) ?: continue
-      if (page.optString("type") == "page") live.add(page.optString("id"))
-    }
-    if (live.isEmpty()) return
-    val stale =
-        hosts.entries
-            .filter { !it.value.startsWith("fallback:") && !live.contains(it.value) }
-            .map { it.key }
-    stale.forEach { hosts.remove(it) }
+  private fun isLocalExtensionResource(url: String): Boolean {
+    if (!url.startsWith("http://127.0.0.1:")) return false
+    val portStart = "http://127.0.0.1:".length
+    val slash = url.indexOf('/', portStart)
+    if (slash <= portStart) return false
+    return url.substring(portStart, slash).toIntOrNull() != null
   }
 
   private fun backgroundCode(directory: File, manifest: JSONObject, background: JSONObject): String {

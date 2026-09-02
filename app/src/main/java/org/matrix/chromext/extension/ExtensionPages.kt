@@ -4,7 +4,19 @@ import org.json.JSONObject
 import org.matrix.chromext.script.Local
 
 object ExtensionPages {
+  private fun isLocalExtensionResource(url: String): Boolean {
+    if (!url.startsWith("http://127.0.0.1:")) return false
+    val portStart = "http://127.0.0.1:".length
+    val slash = url.indexOf('/', portStart)
+    if (slash <= portStart) return false
+    return url.substring(portStart, slash).toIntOrNull() != null
+  }
+
   fun bootstrap(url: String): String? {
+    // Never enumerate extensions or start loopback resource servers while a normal website is
+    // navigating. Extension pages are always served by ChromeXt's 127.0.0.1 resource host.
+    if (!isLocalExtensionResource(url)) return null
+
     val manifests = LocalFiles.managementList()
     var manifest: JSONObject? = null
     for (i in 0 until manifests.length()) {

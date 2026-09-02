@@ -48,6 +48,9 @@ jobs:
       - name: Test WebExtension runtime
         run: node .github/scripts/test-extension-runtime.js
 
+      - name: Test extension navigation safety
+        run: node .github/scripts/test-extension-navigation-safety.js
+
       - name: Run unit tests
         run: ./gradlew --stacktrace app:testDebugUnitTest
 

@@ -62,7 +62,7 @@
           <div>
             <p class="cx-kicker">ChromeXt</p>
             <h1>管理中心</h1>
-            <p class="cx-subtitle">统一管理 UserScript 与浏览器扩展。所有扩展由 ChromeXt 自己的兼容运行时加载，不依赖浏览器原生扩展服务。</p>
+            <p class="cx-subtitle">统一管理 UserScript 与浏览器扩展，并支持直接从设备本地导入脚本、ZIP/CRX 扩展和扩展文件夹。</p>
           </div>
           <button class="cx-refresh" type="button" id="cx-refresh">刷新</button>
         </header>
@@ -74,13 +74,19 @@
           <div class="cx-summary" aria-live="polite">
             <span id="cx-total">0 个脚本</span><span id="cx-enabled">0 个已启用</span>
           </div>
+          <div class="cx-toolbar-actions">
+            <button class="cx-action cx-install" type="button" id="cx-import-userscript">导入本地脚本</button>
+            <input type="file" id="cx-userscript-file" accept=".user.js,.js,.txt,text/javascript,application/javascript,text/plain" multiple hidden>
+          </div>
         </section>
         <section class="cx-toolbar" id="cx-extension-toolbar" hidden>
           <div class="cx-summary" aria-live="polite">
             <span id="cx-extension-total">0 个扩展</span><span id="cx-extension-enabled">0 个已启用</span>
           </div>
-          <button class="cx-action cx-install" type="button" id="cx-install-extension">安装扩展</button>
-          <input type="file" id="cx-extension-file" accept=".zip,.crx,application/zip" hidden>
+          <div class="cx-toolbar-actions">
+            <button class="cx-action cx-install" type="button" id="cx-install-extension">导入本地 ZIP/CRX</button>
+            <input type="file" id="cx-extension-file" accept=".zip,.crx,application/zip" hidden>
+          </div>
         </section>
         <section id="cx-script-list" class="cx-list"><div class="cx-empty">正在读取已安装脚本…</div></section>
         <section id="cx-extension-list" class="cx-list" hidden><div class="cx-empty">正在读取扩展…</div></section>
@@ -144,6 +150,7 @@
       .cx-tab { color: var(--neo-muted); font-weight: 750; }
       .cx-tab.active { color: var(--neo-accent); box-shadow: var(--neo-inset-sm); }
       .cx-toolbar { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin: 18px 4px; }
+      .cx-toolbar-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
       .cx-summary { display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--neo-muted); }
       .cx-summary span { padding: 8px 12px; border-radius: 999px; background: var(--neo-surface); box-shadow: var(--neo-inset-sm); }
       .cx-install { color: var(--neo-accent); font-weight: 750; }
@@ -183,7 +190,9 @@
         .cx-manager { padding: 18px 14px 48px; }
         .cx-header { align-items: center; padding: 18px; border-radius: 22px; }
         .cx-subtitle { font-size: 13px; }
-        .cx-toolbar { align-items: flex-start; }
+        .cx-toolbar { align-items: flex-start; flex-direction: column; }
+        .cx-toolbar-actions { width: 100%; justify-content: stretch; }
+        .cx-toolbar-actions .cx-action { flex: 1; }
         .cx-meta { grid-template-columns: 1fr; }
         .cx-wide { grid-column: auto; }
         .cx-actions .cx-action { flex: 1 1 calc(50% - 10px); }
@@ -194,6 +203,12 @@
     document.getElementById("cx-refresh").addEventListener("click", requestAll);
     document.querySelectorAll(".cx-tab").forEach((button) => {
       button.addEventListener("click", () => switchView(button.dataset.view));
+    });
+    document.getElementById("cx-import-userscript").addEventListener("click", () => document.getElementById("cx-userscript-file").click());
+    document.getElementById("cx-userscript-file").addEventListener("change", (event) => {
+      const files = [...(event.target.files || [])];
+      event.target.value = "";
+      if (files.length) importUserScripts(files);
     });
     document.getElementById("cx-install-extension").addEventListener("click", () => document.getElementById("cx-extension-file").click());
     document.getElementById("cx-extension-file").addEventListener("change", (event) => {
@@ -234,7 +249,7 @@
     document.getElementById("cx-total").textContent = `${scriptsCache.length} 个脚本`;
     document.getElementById("cx-enabled").textContent = `${scriptsCache.filter((s) => s.enabled).length} 个已启用`;
     if (!scriptsCache.length) {
-      list.innerHTML = '<div class="cx-empty">暂无已安装 UserScript</div>';
+      list.innerHTML = '<div class="cx-empty">暂无已安装 UserScript。可点击“导入本地脚本”从设备选择 .user.js / .js 文件。</div>';
       return;
     }
     list.innerHTML = scriptsCache.map((script) => {
@@ -278,13 +293,13 @@
     document.getElementById("cx-extension-total").textContent = `${extensionsCache.length} 个扩展`;
     document.getElementById("cx-extension-enabled").textContent = `${extensionsCache.filter((e) => e.enabled).length} 个已启用`;
     if (!extensionsCache.length) {
-      list.innerHTML = '<div class="cx-empty">暂无已安装扩展。点击“安装扩展”导入 ZIP 或 CRX 文件。</div>';
+      list.innerHTML = '<div class="cx-empty">暂无已安装扩展。可从本地导入 ZIP/CRX，或使用“导入本地文件夹”。</div>';
       return;
     }
     list.innerHTML = extensionsCache.map((extension) => {
       const permissions = extensionPermissions(extension);
       const contentScripts = Array.isArray(extension.content_scripts) ? extension.content_scripts : [];
-      const background = extension.background?.service_worker ? "MV3 Service Worker 兼容宿主" : extension.background ? "Background Page 兼容宿主" : "无后台脚本";
+      const background = extension.background ? "已隔离（不参与普通网页导航）" : "无后台脚本";
       return `<article class="cx-card" data-kind="extension" data-id="${escapeHtml(extension.id)}" data-enabled="${extension.enabled}">
         <div class="cx-card-head"><div><h2 class="cx-title">${escapeHtml(extension.name || extension.id)}<span class="cx-version">v${escapeHtml(extension.version || "0")}</span></h2><div class="cx-id">${escapeHtml(extension.id)}</div></div><span class="cx-status">${extension.enabled ? "已启用" : "已禁用"}</span></div>
         <div class="cx-meta">
@@ -319,6 +334,31 @@
     }));
   };
 
+  const importUserScripts = async (files) => {
+    const button = document.getElementById("cx-import-userscript");
+    button.disabled = true;
+    button.textContent = "正在导入…";
+    let accepted = 0;
+    try {
+      for (const file of files) {
+        if (file.size > 2 * 1024 * 1024) {
+          toast(`${file.name} 导入失败：脚本超过 2 MB`, true);
+          continue;
+        }
+        const code = await file.text();
+        scriptDispatch({ import: true, name: file.name, code });
+        accepted += 1;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      if (!accepted) button.disabled = false;
+    } catch (error) {
+      toast(`脚本导入失败：${error?.message || error}`, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = "导入本地脚本";
+    }
+  };
+
   const bytesToBase64 = (bytes) => {
     let binary = "";
     const size = 0x8000;
@@ -330,7 +370,7 @@
     if (file.size > 32 * 1024 * 1024) return toast("扩展安装失败：文件超过 32 MB", true);
     const button = document.getElementById("cx-install-extension");
     button.disabled = true;
-    button.textContent = "正在安装…";
+    button.textContent = "正在导入…";
     const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
       extensionDispatch({ op: "installStart", token, name: file.name, size: file.size });
@@ -344,7 +384,7 @@
     } catch (error) {
       toast(`扩展安装失败：${error?.message || error}`, true);
       button.disabled = false;
-      button.textContent = "安装扩展";
+      button.textContent = "导入本地 ZIP/CRX";
     }
   };
 
@@ -356,6 +396,16 @@
     buildShell();
     globalThis.ChromeXt.addEventListener("userscript_list", (event) => renderScripts(event.detail));
     globalThis.ChromeXt.addEventListener("userscript_changed", () => requestScripts());
+    globalThis.ChromeXt.addEventListener("userscript_import", (event) => {
+      const detail = event.detail || {};
+      if (detail.ok) {
+        toast(`脚本导入成功：${detail.name || detail.id}`);
+        switchView("scripts");
+        requestScripts();
+      } else {
+        toast(`脚本导入失败：${detail.error || "未知错误"}`, true);
+      }
+    });
     globalThis.ChromeXt.addEventListener("extension_list", (event) => renderExtensions(event.detail));
     globalThis.ChromeXt.addEventListener("extension_changed", (event) => {
       toast(event.detail?.ok ? "扩展状态已更新" : "扩展操作失败", !event.detail?.ok);
@@ -364,7 +414,7 @@
     globalThis.ChromeXt.addEventListener("extension_install", (event) => {
       const button = document.getElementById("cx-install-extension");
       button.disabled = false;
-      button.textContent = "安装扩展";
+      button.textContent = "导入本地 ZIP/CRX";
       const detail = event.detail || {};
       if (detail.extension) {
         toast(`扩展安装成功：${detail.extension.name || detail.extension.id}`);
