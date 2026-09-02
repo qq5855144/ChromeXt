@@ -25,11 +25,16 @@ object ExtensionBackgroundHost {
 
   /** Prepare every enabled extension background for the already-known top-level browser tab. */
   fun prepareAll(preferredTab: Any? = null): List<String> {
-    val target = ExtensionActiveTab.preferred(preferredTab) ?: Chrome.getTab(preferredTab) ?: return emptyList()
-    return LocalFiles.backgroundExtensionIds().mapNotNull { id ->
-      val prepared = prepare(id, target)
-      prepared?.bootstrap
+    val target =
+        ExtensionActiveTab.preferred(preferredTab) ?: Chrome.getTab(preferredTab) ?: return emptyList()
+    val manifests = LocalFiles.managementList()
+    val output = mutableListOf<String>()
+    for (i in 0 until manifests.length()) {
+      val manifest = manifests.optJSONObject(i) ?: continue
+      if (!manifest.optBoolean("enabled") || manifest.optJSONObject("background") == null) continue
+      prepare(manifest.optString("id"), target)?.bootstrap?.let { output.add(it) }
     }
+    return output
   }
 
   fun prepare(id: String, preferredTab: Any? = null): PreparedHost? {
@@ -39,7 +44,8 @@ object ExtensionBackgroundHost {
     val code = backgroundCode(directory, manifest, background)
     if (code.isBlank()) return null
 
-    val preferred = ExtensionActiveTab.preferred(preferredTab) ?: Chrome.getTab(preferredTab) ?: return null
+    val preferred =
+        ExtensionActiveTab.preferred(preferredTab) ?: Chrome.getTab(preferredTab) ?: return null
     val previous = hosts[id]
     val previousTab = previous?.tab?.get()
     val previousAlive =
