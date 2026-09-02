@@ -9,6 +9,7 @@ import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.extension.ExtensionPages
 import org.matrix.chromext.extension.LocalFiles
 import org.matrix.chromext.utils.Log
 import org.matrix.chromext.utils.invokeMethod
@@ -135,10 +136,13 @@ object ScriptDbManager {
     var trustedPage = true
     var runScripts = false
     var bypassSandbox = false
+    val extensionPageScript = ExtensionPages.bootstrap(url)
 
     fixEncoding(url, path, codes)
 
-    if (isUserScript(url, path)) {
+    if (extensionPageScript != null) {
+      trustedPage = false
+    } else if (isUserScript(url, path)) {
       trustedPage = false
       codes.add(Local.promptInstallUserScript)
       bypassSandbox = shouldBypassSandbox(url)
@@ -174,8 +178,9 @@ object ScriptDbManager {
 
     if (trustedPage) {
       codes.add("globalThis.ChromeXt = Symbol.ChromeXt;")
-    } else if (runScripts) {
+    } else if (runScripts || extensionPageScript != null) {
       codes.add("Symbol.ChromeXt.lock(${Local.key}, '${Local.name}');")
+      if (extensionPageScript != null) codes.add(extensionPageScript)
     }
     codes.add("//# sourceURL=local://ChromeXt/init" + if (frameId == null) "" else "/" + frameId)
     webSettings?.invokeMethod(true) { name == "setJavaScriptEnabled" }
