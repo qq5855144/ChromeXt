@@ -1,21 +1,54 @@
 package org.matrix.chromext.extension
 
+import android.net.Uri
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileReader
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.URLConnection
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.utils.Log
 
-/** Builds an isolated popup document that has the WebExtension runtime before extension scripts run. */
+/**
+ * Hosts extension action popups on an isolated loopback origin.
+ *
+ * Popup HTML is never transported through the console/debug bridge. Each installed extension gets
+ * a dedicated loopback origin so its localStorage/IndexedDB and relative resources behave like an
+ * extension page while remaining cross-origin from the ChromeXt manager.
+ */
 object ExtensionPopup {
   private const val MAX_POPUP_BYTES = 2 * 1024 * 1024L
+  private const val DOCUMENT_TTL_MS = 10 * 60 * 1000L
+  private const val POPUP_TOKEN = "__chromext_popup"
+
+  private data class PreparedDocument(
+      val path: String,
+      val bytes: ByteArray,
+      val createdAt: Long,
+  )
+
+  private data class PopupServer(
+      val id: String,
+      val directory: File,
+      val socket: ServerSocket,
+      val documents: ConcurrentHashMap<String, PreparedDocument> = ConcurrentHashMap(),
+  ) {
+    val baseUrl: String = "http://127.0.0.1:${socket.localPort}/"
+  }
+
+  private val servers = ConcurrentHashMap<String, PopupServer>()
 
   fun document(id: String): JSONObject {
-    val manifest = manifest(id) ?: return failure("Unknown or disabled extension")
+    val sourceManifest = manifest(id) ?: return failure("Unknown or disabled extension")
     val action =
-        manifest.optJSONObject("action")
-            ?: manifest.optJSONObject("browser_action")
-            ?: manifest.optJSONObject("page_action")
+        sourceManifest.optJSONObject("action")
+            ?: sourceManifest.optJSONObject("browser_action")
+            ?: sourceManifest.optJSONObject("page_action")
     val popup = action?.optString("default_popup")?.trim().orEmpty()
     if (popup.isBlank()) return failure("Extension does not declare a popup")
 
@@ -26,31 +59,148 @@ object ExtensionPopup {
     if (file.length() > MAX_POPUP_BYTES) return failure("Extension popup is larger than 2 MB")
 
     return runCatching {
+          val server = server(id, root)
+          val manifest = popupManifest(sourceManifest, server.baseUrl)
           val html = FileReader(file).use { it.readText() }
-          val baseUrl = manifest.optString("baseUrl")
-          val popupUrl = baseUrl + popup.trimStart('/')
-          val directoryUrl = popupUrl.substringBeforeLast('/', baseUrl.removeSuffix("/") + "/") + "/"
+          val popupPath = popup.trimStart('/')
+          val popupUrl = server.baseUrl + popupPath
+          val directoryUrl = popupUrl.substringBeforeLast('/', server.baseUrl) + "/"
           val token = UUID.randomUUID().toString()
           val context =
               JSONObject()
                   .put("type", "extension_page")
                   .put("url", popupUrl)
+                  .put("activeUrl", Chrome.getUrl(Chrome.getTab()) ?: "about:blank")
                   .put("frameId", JSONObject.NULL)
                   .put("extensionId", id)
                   .put("contextId", "popup:$token")
           val prelude = buildPrelude(manifest, context, token)
-          val document = injectHead(html, directoryUrl, prelude)
+          val prepared = injectHead(html, directoryUrl, prelude).toByteArray(Charsets.UTF_8)
+          cleanupDocuments(server)
+          server.documents[token] =
+              PreparedDocument(popupPath, prepared, System.currentTimeMillis())
+          val documentUrl =
+              popupUrl + (if (popupUrl.contains('?')) "&" else "?") + "$POPUP_TOKEN=$token"
           val displayName =
-              ExtensionLocale.resolve(id, manifest, manifest.optString("name", id))
+              ExtensionLocale.resolve(id, sourceManifest, sourceManifest.optString("name", id))
           JSONObject()
               .put("ok", true)
               .put("id", id)
               .put("name", displayName)
               .put("popupUrl", popupUrl)
+              .put("documentUrl", documentUrl)
               .put("token", token)
-              .put("document", document)
         }
-        .getOrElse { failure(it.message ?: "Unable to open extension popup") }
+        .getOrElse {
+          Log.e("Unable to prepare extension popup $id: ${it.message}")
+          failure(it.message ?: "Unable to open extension popup")
+        }
+  }
+
+  /** Returns a popup-origin manifest so top-level options/pages on this origin get chrome.* too. */
+  fun manifestForUrl(url: String): JSONObject? {
+    val server = servers.values.firstOrNull { url.startsWith(it.baseUrl) } ?: return null
+    val source = manifest(server.id) ?: return null
+    return popupManifest(source, server.baseUrl)
+  }
+
+  private fun server(id: String, root: File): PopupServer {
+    servers[id]?.let {
+      if (!it.socket.isClosed) return it
+      servers.remove(id, it)
+    }
+    synchronized(this) {
+      servers[id]?.let {
+        if (!it.socket.isClosed) return it
+        servers.remove(id, it)
+      }
+      val socket = ServerSocket(0, 16, InetAddress.getLoopbackAddress())
+      val created = PopupServer(id, root, socket)
+      servers[id] = created
+      Chrome.IO.submit {
+        while (!socket.isClosed) {
+          runCatching { socket.accept() }
+              .onSuccess { connection -> Chrome.IO.submit { serve(created, connection) } }
+              .onFailure { if (!socket.isClosed) Log.e("Extension popup host failed: ${it.message}") }
+        }
+      }
+      return created
+    }
+  }
+
+  private fun serve(server: PopupServer, connection: Socket) {
+    runCatching {
+          connection.use { socket ->
+            val requestLine = socket.getInputStream().bufferedReader().readLine() ?: return
+            val request = requestLine.split(" ")
+            if (request.size < 3 || request[0] != "GET") return
+            if (manifest(server.id) == null) {
+              writeResponse(socket, 404, "text/plain", "Not Found".toByteArray())
+              return
+            }
+
+            val target = request[1]
+            val rawPath = target.substringBefore('?').substringBefore('#')
+            val requestPath = Uri.decode(rawPath).trimStart('/')
+            if (requestPath.contains("..")) {
+              writeResponse(socket, 403, "text/plain", "Forbidden".toByteArray())
+              return
+            }
+
+            val token = queryParameter(target, POPUP_TOKEN)
+            val prepared = token?.let { server.documents[it] }
+            if (prepared != null && prepared.path == requestPath) {
+              if (System.currentTimeMillis() - prepared.createdAt <= DOCUMENT_TTL_MS) {
+                writeResponse(socket, 200, "text/html; charset=utf-8", prepared.bytes)
+                return
+              }
+              server.documents.remove(token)
+            }
+
+            val file = File(server.directory, requestPath).canonicalFile
+            if (
+                !file.path.startsWith(server.directory.canonicalPath + File.separator) ||
+                    !file.isFile) {
+              writeResponse(socket, 404, "text/plain", "Not Found".toByteArray())
+              return
+            }
+            val type = URLConnection.guessContentTypeFromName(file.name) ?: "application/octet-stream"
+            writeResponse(socket, 200, type, FileInputStream(file).use { it.readBytes() })
+          }
+        }
+        .onFailure { Log.e("Failed to serve extension popup resource: ${it.message}") }
+  }
+
+  private fun queryParameter(target: String, name: String): String? {
+    val query = target.substringAfter('?', "").substringBefore('#')
+    if (query.isBlank()) return null
+    return query
+        .split('&')
+        .firstOrNull { it.substringBefore('=') == name }
+        ?.substringAfter('=', "")
+        ?.takeIf { it.isNotBlank() }
+  }
+
+  private fun cleanupDocuments(server: PopupServer) {
+    val cutoff = System.currentTimeMillis() - DOCUMENT_TTL_MS
+    server.documents.entries.removeAll { it.value.createdAt < cutoff }
+  }
+
+  private fun popupManifest(source: JSONObject, baseUrl: String): JSONObject {
+    val manifest = JSONObject(source.toString())
+    manifest.put("baseUrl", baseUrl)
+    val action =
+        manifest.optJSONObject("action")
+            ?: manifest.optJSONObject("browser_action")
+            ?: manifest.optJSONObject("page_action")
+    action?.optString("default_popup")?.takeIf { it.isNotBlank() }?.let {
+      manifest.put("popupUrl", baseUrl + it.trimStart('/'))
+    }
+    val options =
+        manifest.optString("options_page").takeIf { it.isNotBlank() }
+            ?: manifest.optJSONObject("options_ui")?.optString("page")?.takeIf { it.isNotBlank() }
+    if (options != null) manifest.put("optionsUrl", baseUrl + options.trimStart('/'))
+    return manifest
   }
 
   private fun manifest(id: String): JSONObject? {
@@ -159,6 +309,25 @@ object ExtensionPopup {
       return html.substring(0, index) + "<head>$insertion</head>" + html.substring(index)
     }
     return "<!doctype html><html><head>$insertion</head><body>$html</body></html>"
+  }
+
+  private fun writeResponse(socket: Socket, status: Int, type: String, bytes: ByteArray) {
+    val reason =
+        when (status) {
+          200 -> "OK"
+          403 -> "Forbidden"
+          else -> "Not Found"
+        }
+    val headers =
+        "HTTP/1.1 $status $reason\r\n" +
+            "Content-Length: ${bytes.size}\r\n" +
+            "Content-Type: $type\r\n" +
+            "Cache-Control: no-cache\r\n" +
+            "Access-Control-Allow-Origin: *\r\n" +
+            "Cross-Origin-Resource-Policy: cross-origin\r\n" +
+            "Connection: close\r\n\r\n"
+    socket.getOutputStream().write(headers.toByteArray(Charsets.US_ASCII))
+    socket.getOutputStream().write(bytes)
   }
 
   private fun escapeAttribute(value: String): String =
