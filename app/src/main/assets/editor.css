@@ -203,11 +203,11 @@ dialog#confirm {
   text-align: center;
   white-space: normal;
   background: var(--neo-surface);
-  box-shadow: 16px 16px 38px rgba(150, 160, 170, 0.44), -16px -16px 38px rgba(255, 255, 255, 0.94);
+  box-shadow: none;
 }
 
 dialog#confirm::backdrop {
-  background: rgba(226, 230, 234, 0.7);
+  background: rgba(18, 22, 28, 0.62);
   backdrop-filter: blur(5px);
 }
 
