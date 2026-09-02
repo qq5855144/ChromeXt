@@ -124,6 +124,7 @@ object ExtensionBackgroundHost {
         ${LocalFiles.script}
         const chrome=__cxCreateExtensionApi(__cxExtension,__cxContext,__cxNative);
         const browser=chrome;
+        ${ExtensionCompat.script}
         try { ${code} } catch(error) { console.error('[ChromeXt Extension background ${id}]', error); }
       })();
       //# sourceURL=local://ChromeXt/extension/${id}/background-host
