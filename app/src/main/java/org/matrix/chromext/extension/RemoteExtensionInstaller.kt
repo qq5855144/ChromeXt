@@ -28,7 +28,7 @@ object RemoteExtensionInstaller {
     return try {
       val connection = open(resolved)
       try {
-        val length = connection.contentLengthLong
+        val length = connection.contentLength
         if (length > MAX_PACKAGE_BYTES) return failure("扩展安装失败：下载文件超过 32 MB")
         val buffer = ByteArray(24 * 1024)
         var total = 0
