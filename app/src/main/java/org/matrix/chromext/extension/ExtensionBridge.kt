@@ -15,6 +15,26 @@ object ExtensionBridge {
     return LocalFiles.api(id, JSONObject().put("api", api).put("args", args), Chrome.getTab(), null)
   }
 
+  private fun hasPermission(id: String, permission: String): Boolean {
+    val response = managerApi(id, "permissions.getAll")
+    if (!response.optBoolean("ok")) return false
+    val value = response.optJSONObject("value") ?: return false
+    val permissions = value.optJSONArray("permissions") ?: JSONArray()
+    for (i in 0 until permissions.length()) {
+      if (permissions.optString(i) == permission) return true
+    }
+    return false
+  }
+
+  private fun requiredPermission(api: String): String? =
+      when {
+        api.startsWith("cookies.") -> "cookies"
+        api.startsWith("downloads.") -> "downloads"
+        api.startsWith("notifications.") -> "notifications"
+        api.startsWith("scripting.") -> "scripting"
+        else -> null
+      }
+
   fun manager(payload: String): String {
     if (payload.isBlank()) return managerEvent("extension_list", LocalFiles.managementList())
     val data = JSONObject(payload)
@@ -123,6 +143,7 @@ object ExtensionBridge {
     val isPrivilegedContext = contextType == "background" || contextType == "extension_page"
     val url = Chrome.getUrl(currentTab)
     val api = request.optString("api")
+    val permission = requiredPermission(api)
     val result =
         if (extensionId.isBlank() || requestId.isBlank()) {
           JSONObject().put("ok", false).put("error", "Invalid extension request")
@@ -132,6 +153,10 @@ object ExtensionBridge {
           JSONObject()
               .put("ok", false)
               .put("error", "Optional permissions must be granted from the ChromeXt manager")
+        } else if (permission != null && !hasPermission(extensionId, permission)) {
+          JSONObject()
+              .put("ok", false)
+              .put("error", "Missing WebExtension permission: $permission")
         } else if (api == "runtime.sendMessage" || api == "tabs.sendMessage" || api == "runtime.sendMessageResponse") {
           messageResult(request, currentTab, frameId)
         } else {
