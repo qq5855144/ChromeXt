@@ -22,6 +22,8 @@ import org.matrix.chromext.utils.shouldBypassSandbox
 
 object ScriptDbManager {
 
+  private const val SCRIPT_DOCK_SETTINGS_ORIGIN = "chromext-internal://script-dock"
+
   val scripts = query()
   val cosmeticFilters: MutableMap<String, String>
   val userAgents: MutableMap<String, String>
@@ -195,6 +197,18 @@ object ScriptDbManager {
             if (it.grant.contains("frames")) framesGranted = true
             GM.bootstrap(it, codes)
           }
+      if (frameId == null) {
+        val dockY =
+            cosmeticFilters[SCRIPT_DOCK_SETTINGS_ORIGIN]
+                ?.toDoubleOrNull()
+                ?.coerceIn(0.08, 0.92)
+                ?: 0.5
+        val dockCode = Local.scriptDock.replace("ChromeXtDockInitialY", dockY.toString())
+        codes.add(
+            "(()=>{const bootChromeXtScriptDock=()=>{\n${dockCode}\n};" +
+                "if(document.documentElement){bootChromeXtScriptDock();}" +
+                "else{document.addEventListener('DOMContentLoaded',bootChromeXtScriptDock,{once:true});}})();")
+      }
       if (!asyncEvaluation) Chrome.evaluateJavascript(codes, webView, frameId)
     }
     if (asyncEvaluation)
