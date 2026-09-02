@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 
 const source = fs.readFileSync("app/src/main/assets/extension.js", "utf8");
+const compatSource = fs.readFileSync("app/src/main/assets/extension_compat.js", "utf8");
 const events = new Map();
 const calls = [];
 
@@ -48,7 +49,9 @@ const native = {
         ? { os: "android", arch: "arm64", nacl_arch: "" }
         : request.api === "scripting.getRegisteredContentScripts"
           ? []
-          : null;
+          : request.api === "tabs.query"
+            ? [{ id: "cx-test", url: "https://example.com/page", active: true }]
+            : null;
     queueMicrotask(() =>
       emit("cx_extension_response", {
         ok: true,
@@ -99,7 +102,10 @@ const manifest = {
   enabled: true,
   baseUrl: "http://127.0.0.1:12345/",
   host_permissions: ["https://example.com/*"],
-  permissions: ["scripting"],
+  permissions: ["scripting", "declarativeNetRequest", "webRequest", "userScripts"],
+  declarative_net_request: {
+    rule_resources: [{ id: "ruleset_1", enabled: true, path: "rules.json" }],
+  },
 };
 const context = {
   type: "content",
@@ -108,6 +114,9 @@ const context = {
   extensionId: manifest.id,
 };
 const chrome = sandbox.__cxFactory(manifest, context, native);
+sandbox.chrome = chrome;
+sandbox.browser = chrome;
+vm.runInNewContext(compatSource, sandbox, { filename: "extension_compat.js" });
 
 (async () => {
   const publicManifest = chrome.runtime.getManifest();
@@ -162,7 +171,25 @@ const chrome = sandbox.__cxFactory(manifest, context, native);
     /Target tab is not available/
   );
 
-  console.log("WebExtension runtime smoke test passed");
+  assert.ok(chrome.webRequest?.onBeforeRequest?.addListener);
+  assert.equal(chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES, 30000);
+  assert.deepEqual(Array.from(await chrome.declarativeNetRequest.getEnabledRulesets()), ["ruleset_1"]);
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    addRules: [{ id: 7, priority: 1, action: { type: "block" }, condition: {} }],
+  });
+  const dynamicRules = await chrome.declarativeNetRequest.getDynamicRules();
+  assert.equal(dynamicRules.length, 1);
+  assert.equal(dynamicRules[0].id, 7);
+
+  await chrome.userScripts.register([{ id: "userscript-1", matches: ["https://example.com/*"] }]);
+  const userScripts = await chrome.userScripts.getScripts({});
+  assert.equal(userScripts.length, 1);
+  assert.equal(userScripts[0].id, "userscript-1");
+
+  const tab = await chrome.tabs.get("cx-test");
+  assert.equal(tab.url, "https://example.com/page");
+
+  console.log("WebExtension runtime and complex MV3 compatibility smoke test passed");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
