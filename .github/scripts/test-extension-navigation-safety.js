@@ -16,6 +16,22 @@ const addon = fs.readFileSync(
   "app/src/main/assets/extension_manager_addon.js",
   "utf8"
 );
+const installerUi = fs.readFileSync(
+  "app/src/main/assets/extension_install_fix.js",
+  "utf8"
+);
+const bridge = fs.readFileSync(
+  "app/src/main/java/org/matrix/chromext/extension/ExtensionBridge.kt",
+  "utf8"
+);
+const remoteInstaller = fs.readFileSync(
+  "app/src/main/java/org/matrix/chromext/extension/RemoteExtensionInstaller.kt",
+  "utf8"
+);
+const local = fs.readFileSync(
+  "app/src/main/java/org/matrix/chromext/script/Local.kt",
+  "utf8"
+);
 const listener = fs.readFileSync(
   "app/src/main/java/org/matrix/chromext/Listener.kt",
   "utf8"
@@ -52,4 +68,33 @@ assert.ok(
   "native bridge must accept local UserScript imports"
 );
 
-console.log("Extension navigation safety and local-import regression checks passed");
+const chunkMatch = installerUi.match(/const CHUNK_SIZE = (\d+) \* 1024/);
+assert.ok(chunkMatch, "reliable installer must declare an explicit upload chunk size");
+assert.ok(
+  Number(chunkMatch[1]) <= 16,
+  "console/debug bridge chunks must stay small enough for Android Chromium/WebView"
+);
+assert.ok(
+  installerUi.includes("dispatchAndWait") &&
+    installerUi.includes("extension_install_progress") &&
+    installerUi.includes("installFromUrl"),
+  "extension install UI must wait for native ACKs and expose direct URL install"
+);
+assert.ok(
+  bridge.includes("taggedUploadResult") &&
+    bridge.includes('"installUrl"') &&
+    bridge.includes('put("seq"'),
+  "native extension bridge must correlate upload ACKs and direct installs"
+);
+assert.ok(
+  remoteInstaller.includes("clients2.google.com/service/update2/crx") &&
+    remoteInstaller.includes("MAX_PACKAGE_BYTES") &&
+    remoteInstaller.includes("instanceFollowRedirects = false"),
+  "direct installer must support Chrome Web Store downloads with bounded redirects and size"
+);
+assert.ok(
+  local.includes('ctx.assets.open("extension_install_fix.js")'),
+  "manager must load the reliable extension installer layer"
+);
+
+console.log("Extension navigation safety and local/direct-install regression checks passed");
