@@ -40,7 +40,10 @@ import org.matrix.chromext.utils.Log
  */
 object LocalFiles {
   private const val MAX_PACKAGE_BYTES = 32 * 1024 * 1024
-  private const val MAX_UNPACKED_BYTES = 96 * 1024 * 1024L
+  private const val MIN_UNPACKED_BYTES = 256 * 1024 * 1024L
+  private const val MAX_UNPACKED_BYTES = 512 * 1024 * 1024L
+  private const val MAX_UNPACK_RATIO = 20L
+  private const val MAX_SINGLE_FILE_BYTES = 256 * 1024 * 1024L
   private const val MAX_FILES = 6000
 
   private data class Extension(
@@ -233,6 +236,10 @@ object LocalFiles {
   }
 
   private fun unpack(bytes: ByteArray, target: File) {
+    val unpackLimit =
+        (bytes.size.toLong() * MAX_UNPACK_RATIO)
+            .coerceAtLeast(MIN_UNPACKED_BYTES)
+            .coerceAtMost(MAX_UNPACKED_BYTES)
     var total = 0L
     var count = 0
     val canonicalRoot = target.canonicalFile
@@ -248,13 +255,20 @@ object LocalFiles {
           output.mkdirs()
         } else {
           output.parentFile?.mkdirs()
+          var entryTotal = 0L
           FileOutputStream(output).use { stream ->
             val buffer = ByteArray(16 * 1024)
             while (true) {
               val read = zip.read(buffer)
               if (read <= 0) break
+              entryTotal += read
               total += read
-              if (total > MAX_UNPACKED_BYTES) throw IllegalArgumentException("Extension expands beyond 96 MB")
+              if (entryTotal > MAX_SINGLE_FILE_BYTES)
+                  throw IllegalArgumentException("Extension contains a file larger than 256 MB")
+              if (total > unpackLimit) {
+                val limitMb = unpackLimit / (1024 * 1024)
+                throw IllegalArgumentException("Extension expands beyond ${limitMb} MB safety limit")
+              }
               stream.write(buffer, 0, read)
             }
           }
