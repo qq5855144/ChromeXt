@@ -4,10 +4,11 @@ on:
   push:
     branches:
       - master
+      - extension-only
       - "fix/**"
     tags: ["v*"]
   pull_request:
-    branches: [master]
+    branches: [master, extension-only]
   workflow_dispatch:
 
 permissions:
@@ -55,7 +56,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ChromeXt_lint
+          name: ChromeXt_Extension_lint
           path: |
             app/build/reports/lint-results-debug.html
             app/build/reports/lint-results-debug.xml
@@ -70,22 +71,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp app/build/outputs/apk/debug/app-debug.apk app/build/ChromeXt_debug.apk
-          cp app/build/outputs/apk/release/app-release-unsigned.apk app/build/ChromeXt_release_unsigned.apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/ChromeXt_Extension_debug.apk
+          cp app/build/outputs/apk/release/app-release-unsigned.apk app/build/ChromeXt_Extension_release_unsigned.apk
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
         with:
-          name: ChromeXt_debug
-          path: app/build/ChromeXt_debug.apk
+          name: ChromeXt_Extension_debug
+          path: app/build/ChromeXt_Extension_debug.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Upload unsigned release APK
         uses: actions/upload-artifact@v7
         with:
-          name: ChromeXt_release_unsigned
-          path: app/build/ChromeXt_release_unsigned.apk
+          name: ChromeXt_Extension_release_unsigned
+          path: app/build/ChromeXt_Extension_release_unsigned.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -108,7 +109,7 @@ jobs:
 
       - name: Prepare release APK for signing
         if: ${{ steps.signing.outputs.enabled == 'true' }}
-        run: cp app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/ChromeXt.apk
+        run: cp app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/ChromeXt-Extension.apk
 
       - name: Sign tagged release APK
         if: ${{ steps.signing.outputs.enabled == 'true' }}
@@ -125,7 +126,7 @@ jobs:
         if: ${{ steps.signing.outputs.enabled == 'true' }}
         uses: actions/upload-artifact@v7
         with:
-          name: ChromeXt_signed
+          name: ChromeXt_Extension_signed
           path: ${{ steps.sign_app.outputs.signedReleaseFile }}
           if-no-files-found: error
           retention-days: 30
