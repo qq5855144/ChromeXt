@@ -198,11 +198,12 @@ object ExtensionBridge {
       "scripting.getRegisteredContentScripts" ->
           ExtensionDynamicScripts.get(extensionId, args.optJSONObject(0))
       "scripting.insertCSS" ->
-          ExtensionScriptingCompat.insertCss(args.optJSONObject(0), currentTab)
+          ExtensionScriptingCompat.insertCss(extensionId, args.optJSONObject(0), currentTab)
       "scripting.removeCSS" ->
-          ExtensionScriptingCompat.removeCss(args.optJSONObject(0), currentTab)
+          ExtensionScriptingCompat.removeCss(extensionId, args.optJSONObject(0), currentTab)
       "notifications.clear" -> ExtensionNativeCompat.clearNotification(args.optString(0))
       "cookies.getAll" -> ExtensionNativeCompat.getAllCookies(args.optJSONObject(0))
+      "cookies.set" -> ExtensionNativeCompat.setCookie(args.optJSONObject(0))
       "cookies.remove" -> ExtensionNativeCompat.removeCookie(args.optJSONObject(0))
       else -> null
     }
