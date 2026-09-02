@@ -47,6 +47,14 @@
     return extension.baseUrl + String(path).replace(/^\//, "");
   };
 
+  const setFallbackIcon = (button, extension) => {
+    button.replaceChildren();
+    const fallback = document.createElement("span");
+    fallback.className = "cx-extension-icon-fallback";
+    fallback.textContent = String(extension?.name || "E").trim().slice(0, 1).toUpperCase() || "E";
+    button.append(fallback);
+  };
+
   const ensurePopupModal = () => {
     if (document.getElementById("cx-extension-popup")) return;
     const modal = document.createElement("div");
@@ -118,6 +126,10 @@
         transform: translateY(1px);
         box-shadow: var(--neo-inset-sm);
       }
+      .cx-extension-toolbar-icon:disabled {
+        opacity: .45;
+        cursor: default;
+      }
       .cx-extension-toolbar-icon img {
         display: block;
         width: 34px;
@@ -154,6 +166,7 @@
     activePopup = null;
     if (frame) {
       frame.removeAttribute("srcdoc");
+      frame.src = "about:blank";
       frame.style.height = "min(78vh, 720px)";
     }
     if (modal) modal.hidden = true;
@@ -186,27 +199,22 @@
           const image = document.createElement("img");
           image.src = icon;
           image.alt = "";
-          image.addEventListener("error", () => {
-            button.innerHTML = `<span class="cx-extension-icon-fallback">${String(extension.name || "E").trim().slice(0, 1).toUpperCase()}</span>`;
-          }, { once: true });
+          image.addEventListener("error", () => setFallbackIcon(button, extension), { once: true });
           button.append(image);
         } else {
-          const fallback = document.createElement("span");
-          fallback.className = "cx-extension-icon-fallback";
-          fallback.textContent = String(extension.name || "E").trim().slice(0, 1).toUpperCase();
-          button.append(fallback);
+          setFallbackIcon(button, extension);
         }
         head.prepend(button);
       }
 
       const popupButton = card.querySelector("[data-action='popup']");
       if (popupButton) popupButton.textContent = "打开菜单";
-      if (hasPopup || popupButton) return;
     });
   };
 
   const renderPopup = (detail) => {
     if (!detail?.ok) return showToast(`扩展菜单打开失败：${detail?.error || "未知错误"}`, true);
+    if (!detail.documentUrl) return showToast("扩展菜单打开失败：缺少本地菜单地址", true);
     ensurePopupModal();
     const modal = document.getElementById("cx-extension-popup");
     const frame = document.getElementById("cx-extension-popup-frame");
@@ -218,7 +226,8 @@
       ready: false,
     };
     modal.hidden = false;
-    frame.srcdoc = detail.document || "";
+    frame.removeAttribute("srcdoc");
+    frame.src = detail.documentUrl;
   };
 
   const onFrameMessage = (event) => {
