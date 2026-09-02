@@ -54,7 +54,11 @@ object ExtensionBackgroundHost {
       if (page.optString("type") == "page") live.add(page.optString("id"))
     }
     if (live.isEmpty()) return
-    hosts.entries.removeIf { !it.value.startsWith("fallback:") && !live.contains(it.value) }
+    val stale =
+        hosts.entries
+            .filter { !it.value.startsWith("fallback:") && !live.contains(it.value) }
+            .map { it.key }
+    stale.forEach { hosts.remove(it) }
   }
 
   private fun backgroundCode(directory: File, manifest: JSONObject, background: JSONObject): String {
@@ -115,7 +119,7 @@ object ExtensionBackgroundHost {
             .put("extensionId", id)
     return """
       (()=>{
-        globalThis.__cxExtensionBackgrounds ??= new Set();
+        if(!globalThis.__cxExtensionBackgrounds) globalThis.__cxExtensionBackgrounds=new Set();
         if(globalThis.__cxExtensionBackgrounds.has(${JSONObject.quote(id)})) return;
         globalThis.__cxExtensionBackgrounds.add(${JSONObject.quote(id)});
         const __cxExtension=${manifest};
