@@ -412,6 +412,29 @@ object Listener {
           val data = JSONObject(payload)
           if (data.optBoolean("list")) {
             callback = "ChromeXt.post('userscript_list', ${ScriptDbManager.managementList()});"
+          } else if (data.optBoolean("import") && data.has("code")) {
+            val source = data.optString("code")
+            val detail =
+                JSONObject()
+                    .put("type", "import")
+                    .put("name", data.optString("name", "local.user.js"))
+            if (source.length > 2 * 1024 * 1024) {
+              detail.put("ok", false).put("error", "UserScript is larger than 2 MB")
+            } else {
+              val script = parseScript(source)
+              if (script == null) {
+                detail.put("ok", false).put("error", "Invalid UserScript metadata or match rules")
+              } else {
+                Log.i("Import local script ${script.id}")
+                ScriptDbManager.apply {
+                  insert(script)
+                  scripts.removeAll(scripts.filter { it.id == script.id })
+                  scripts.add(script)
+                }
+                detail.put("ok", true).put("id", script.id)
+              }
+            }
+            callback = "ChromeXt.post('userscript_import', ${detail});"
           } else if (data.has("enabled") && data.has("ids")) {
             val jsonArray = data.getJSONArray("ids")
             val ids = Array(jsonArray.length()) { jsonArray.getString(it) }
