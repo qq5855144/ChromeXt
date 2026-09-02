@@ -9,14 +9,20 @@ import org.matrix.chromext.Chrome
 import org.matrix.chromext.devtools.DevSessions
 import org.matrix.chromext.utils.Log
 
-/** Additional chrome.scripting compatibility operations that require reversible CSS injection. */
+/** chrome.scripting compatibility operations routed to browser-owned tabs whenever possible. */
 object ExtensionScriptingCompat {
+  fun executeScript(extensionId: String, details: JSONObject?, currentTab: Any?): JSONObject {
+    if (details == null) return failure("Missing script injection details")
+    val expression = scriptText(extensionId, details) ?: return failure("executeScript requires func, code or files")
+    return evaluate(details, currentTab, expression, JSONArray().put(JSONObject().put("result", JSONObject.NULL)))
+  }
+
   fun insertCss(extensionId: String, details: JSONObject?, currentTab: Any?): JSONObject {
     val css = cssText(extensionId, details) ?: return failure("insertCSS requires css or files")
     val key = cssKey(extensionId, css)
     val expression =
         "(()=>{const old=document.querySelectorAll('style[data-chromext-insert-css=${JSONObject.quote(key)}]');old.forEach(n=>n.remove());const s=document.createElement('style');s.setAttribute('data-chromext-insert-css',${JSONObject.quote(key)});s.textContent=${JSONObject.quote(css)};(document.head||document.documentElement).appendChild(s);})()"
-    return evaluate(details, currentTab, expression)
+    return evaluate(details, currentTab, expression, JSONObject.NULL)
   }
 
   fun removeCss(extensionId: String, details: JSONObject?, currentTab: Any?): JSONObject {
@@ -24,11 +30,16 @@ object ExtensionScriptingCompat {
     val key = cssKey(extensionId, css)
     val expression =
         "(()=>{document.querySelectorAll('style[data-chromext-insert-css=${JSONObject.quote(key)}]').forEach(n=>n.remove());})()"
-    return evaluate(details, currentTab, expression)
+    return evaluate(details, currentTab, expression, JSONObject.NULL)
   }
 
-  private fun evaluate(details: JSONObject?, currentTab: Any?, expression: String): JSONObject {
-    if (details == null) return failure("Missing CSS injection details")
+  private fun evaluate(
+      details: JSONObject?,
+      currentTab: Any?,
+      expression: String,
+      value: Any?,
+  ): JSONObject {
+    if (details == null) return failure("Missing scripting details")
     val target = details.optJSONObject("target")
     val tabId = target?.optString("tabId")?.takeIf { it.isNotBlank() }
     return runCatching {
@@ -36,20 +47,38 @@ object ExtensionScriptingCompat {
             val remembered = ExtensionActiveTab.resolve(tabId)
             if (remembered != null) {
               Chrome.evaluateJavascript(listOf(expression), remembered)
+            } else if (tabId.startsWith("cx-local-")) {
+              return@runCatching failure("Target tab is no longer available")
             } else {
-              val client = DevSessions.new(tabId, "extension-css")
+              val client = DevSessions.new(tabId, "extension-scripting")
               client.evaluateJavascript(expression)
               client.close()
             }
           } else {
-            Chrome.evaluateJavascript(listOf(expression), ExtensionActiveTab.preferred(currentTab))
+            val targetTab = ExtensionActiveTab.preferred(currentTab) ?: currentTab
+            Chrome.evaluateJavascript(listOf(expression), targetTab)
           }
-          success(JSONObject.NULL)
+          success(value)
         }
         .getOrElse {
-          Log.e("Extension CSS injection failed: ${it.message}")
-          failure(it.message ?: "CSS injection failed")
+          Log.e("Extension scripting failed: ${it.message}")
+          failure(it.message ?: "Extension scripting failed")
         }
+  }
+
+  private fun scriptText(extensionId: String, details: JSONObject): String? {
+    val inline = details.optString("code")
+    if (inline.isNotBlank()) return inline
+
+    val func = details.optString("func")
+    if (func.isNotBlank()) {
+      val args = details.optJSONArray("args") ?: JSONArray()
+      return "(${func}).apply(null,${args})"
+    }
+
+    val files = strings(details.optJSONArray("files"))
+    if (files.isEmpty()) return null
+    return readFiles(extensionId, files)
   }
 
   private fun cssText(extensionId: String, details: JSONObject?): String? {
@@ -58,10 +87,14 @@ object ExtensionScriptingCompat {
     if (inline.isNotBlank()) return inline
     val files = strings(details.optJSONArray("files"))
     if (files.isEmpty()) return null
+    return readFiles(extensionId, files)
+  }
+
+  private fun readFiles(extensionId: String, paths: List<String>): String? {
     val root =
         File(Chrome.getContext().getExternalFilesDir(null), "Extension/$extensionId").canonicalFile
     val parts = mutableListOf<String>()
-    for (path in files) {
+    for (path in paths) {
       val file = File(root, path.trimStart('/')).canonicalFile
       if (!file.path.startsWith(root.path + File.separator) || !file.isFile) return null
       val text = runCatching { FileReader(file).use { it.readText() } }.getOrNull() ?: return null
