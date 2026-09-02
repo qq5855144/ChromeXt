@@ -69,6 +69,35 @@ function parseScriptMeta(metaText) {
   return info;
 }
 
+function sanitizeDownloadName(name) {
+  const clean = String(name || "UserScript")
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  const base = clean || "UserScript";
+  return base.endsWith(".user.js") ? base : base + ".user.js";
+}
+
+function downloadCurrentScript() {
+  const meta = document.querySelector("#meta");
+  const code = document.querySelector("#code");
+  if (!meta || !code) return;
+
+  const script = meta.innerText + code.innerText;
+  const info = parseScriptMeta(meta.innerText);
+  const blob = new Blob([script], { type: "text/javascript;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = sanitizeDownloadName(info.name);
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 async function installScript(force = false) {
   const dialog = document.querySelector("dialog#confirm");
   if (!force) {
@@ -111,9 +140,15 @@ function createInfoCard(info) {
   card.id = "script-info";
   const head = document.createElement("div");
   head.className = "info-head";
-  const icon = document.createElement("span");
-  icon.className = "info-icon";
-  icon.textContent = "📦";
+  const download = document.createElement("button");
+  download.className = "info-download";
+  download.type = "button";
+  download.textContent = "下载";
+  download.setAttribute("aria-label", "下载当前用户脚本");
+  download.addEventListener("click", () => {
+    download.blur();
+    downloadCurrentScript();
+  });
   const title = document.createElement("div");
   title.className = "info-title";
   const name = document.createElement("span");
@@ -123,7 +158,7 @@ function createInfoCard(info) {
   version.className = "info-version";
   version.textContent = info.version ? "v" + info.version : "";
   title.append(name, version);
-  head.append(icon, title);
+  head.append(download, title);
   const tags = document.createElement("div");
   tags.className = "info-tags";
   const matchTag = document.createElement("span");
