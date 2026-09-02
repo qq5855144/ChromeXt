@@ -1,5 +1,6 @@
 package org.matrix.chromext.extension
 
+import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
@@ -43,6 +44,14 @@ object ExtensionBridge {
         else -> null
       }
 
+  private fun taggedUploadResult(data: JSONObject, result: JSONObject): JSONObject {
+    val detail = JSONObject(result.toString())
+    if (data.has("token")) detail.put("token", data.optString("token"))
+    if (data.has("seq")) detail.put("seq", data.optInt("seq"))
+    if (data.has("path")) detail.put("path", data.optString("path"))
+    return detail
+  }
+
   fun manager(payload: String): String {
     if (payload.isBlank()) return managerEvent("extension_list", LocalFiles.managementList())
     val data = JSONObject(payload)
@@ -66,27 +75,50 @@ object ExtensionBridge {
             "extension_changed",
             JSONObject().put("ok", changed).put("type", "delete").put("id", id))
       }
-      "installStart" ->
-          managerEvent(
-              "extension_install_started",
-              LocalFiles.beginInstall(data.getString("token"), data.optString("name", "extension.zip")))
-      "installChunk" ->
-          managerEvent(
-              "extension_install_progress",
-              LocalFiles.appendInstall(data.getString("token"), data.getString("data")))
-      "installFinish" ->
-          managerEvent("extension_install", LocalFiles.finishInstall(data.getString("token")))
-      "folderStart" ->
-          managerEvent("extension_install_started", UnpackedExtensionInstaller.begin(data.getString("token")))
-      "folderChunk" ->
-          managerEvent(
-              "extension_install_progress",
-              UnpackedExtensionInstaller.append(
-                  data.getString("token"), data.getString("path"), data.getString("data")))
-      "folderFinish" ->
+      "installStart" -> {
+        val result = LocalFiles.beginInstall(data.getString("token"), data.optString("name", "extension.zip"))
+        managerEvent("extension_install_started", taggedUploadResult(data, result))
+      }
+      "installChunk" -> {
+        val result = LocalFiles.appendInstall(data.getString("token"), data.getString("data"))
+        managerEvent("extension_install_progress", taggedUploadResult(data, result))
+      }
+      "installFinish" -> {
+        val result = LocalFiles.finishInstall(data.getString("token"))
+        managerEvent("extension_install", taggedUploadResult(data, result))
+      }
+      "installUrl" -> {
+        val source = data.optString("url").trim()
+        val requestToken = data.optString("token").ifBlank { "remote-${UUID.randomUUID()}" }
+        if (source.isBlank()) {
           managerEvent(
               "extension_install",
-              UnpackedExtensionInstaller.finish(data.getString("token"), data.optString("name")))
+              JSONObject().put("ok", false).put("error", "请输入扩展地址").put("token", requestToken))
+        } else {
+          val targetTab = Chrome.getTab()
+          Chrome.IO.submit {
+            val result = RemoteExtensionInstaller.install(source).put("token", requestToken)
+            Chrome.evaluateJavascript(listOf(managerEvent("extension_install", result)), targetTab)
+          }
+          managerEvent(
+              "extension_install_started",
+              JSONObject().put("ok", true).put("token", requestToken).put("remote", true))
+        }
+      }
+      "folderStart" -> {
+        val result = UnpackedExtensionInstaller.begin(data.getString("token"))
+        managerEvent("extension_install_started", taggedUploadResult(data, result))
+      }
+      "folderChunk" -> {
+        val result =
+            UnpackedExtensionInstaller.append(
+                data.getString("token"), data.getString("path"), data.getString("data"))
+        managerEvent("extension_install_progress", taggedUploadResult(data, result))
+      }
+      "folderFinish" -> {
+        val result = UnpackedExtensionInstaller.finish(data.getString("token"), data.optString("name"))
+        managerEvent("extension_install", taggedUploadResult(data, result))
+      }
       "permissions" ->
           managerEvent(
               "extension_permissions",
