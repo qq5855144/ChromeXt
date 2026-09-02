@@ -60,12 +60,52 @@ object ExtensionBackgroundHost {
     return PreparedHost(target, if (needsBootstrap) buildRuntime(manifest, code, targetUrl) else null)
   }
 
+  /** Emulate a browser toolbar action click when an extension has no default_popup. */
+  fun dispatchActionClick(id: String, preferredTab: Any? = null): Boolean {
+    val prepared = prepare(id, preferredTab) ?: return false
+    val activeTab = ExtensionActiveTab.snapshot(prepared.tab)
+    val code =
+        """
+        (()=>{
+          const runtime=globalThis.__cxExtensionRuntimes?.get(${JSONObject.quote(id)});
+          if(!runtime)return;
+          const tab=${activeTab};
+          runtime.chrome?.action?.onClicked?.dispatch(tab);
+        })();
+        //# sourceURL=local://ChromeXt/extension/${id}/action-click
+        """.trimIndent()
+    val codes = mutableListOf<String>()
+    prepared.bootstrap?.let { codes.add(it) }
+    codes.add(code)
+    Chrome.evaluateJavascript(codes, prepared.tab)
+    return true
+  }
+
+  fun isAttached(id: String): Boolean {
+    val host = hosts[id] ?: return false
+    val tab = host.tab.get() ?: return false
+    return runCatching { Chrome.checkTab(tab) && Chrome.getUrl(tab) == host.url }.getOrDefault(false)
+  }
+
   fun release(id: String) {
-    hosts.remove(id)
+    val host = hosts.remove(id) ?: return
+    val tab = host.tab.get() ?: return
+    if (!runCatching { Chrome.checkTab(tab) }.getOrDefault(false)) return
+    val code =
+        """
+        (()=>{
+          const id=${JSONObject.quote(id)};
+          const runtime=globalThis.__cxExtensionRuntimes?.get(id);
+          try{ runtime?.destroy?.(); }catch(error){ console.error('[ChromeXt Extension stop]',error); }
+          globalThis.__cxExtensionRuntimes?.delete(id);
+          globalThis.__cxExtensionBackgrounds?.delete(id);
+        })();
+        """.trimIndent()
+    Chrome.evaluateJavascript(listOf(code), tab)
   }
 
   fun releaseAll() {
-    hosts.clear()
+    hosts.keys.toList().forEach { release(it) }
   }
 
   private fun manifest(id: String): JSONObject? {
@@ -141,6 +181,7 @@ object ExtensionBackgroundHost {
       (()=>{
         const __cxRealGlobal=globalThis;
         if(!__cxRealGlobal.__cxExtensionBackgrounds) __cxRealGlobal.__cxExtensionBackgrounds=new Set();
+        if(!__cxRealGlobal.__cxExtensionRuntimes) __cxRealGlobal.__cxExtensionRuntimes=new Map();
         if(__cxRealGlobal.__cxExtensionBackgrounds.has(${JSONObject.quote(id)})) return;
         __cxRealGlobal.__cxExtensionBackgrounds.add(${JSONObject.quote(id)});
         const __cxExtension=${manifest};
@@ -161,6 +202,11 @@ object ExtensionBackgroundHost {
           set(target,key,value){ __cxOverlay[key]=value; return true; },
           has(target,key){ return Object.prototype.hasOwnProperty.call(__cxOverlay,key)||key in target; }
         });
+        const __cxRuntime={chrome,browser,context:__cxContext,destroy(){
+          try{ chrome.__cxDestroy?.(); }catch(_){}
+          Object.keys(__cxOverlay).forEach((key)=>{ if(key!=='chrome'&&key!=='browser')delete __cxOverlay[key]; });
+        }};
+        __cxRealGlobal.__cxExtensionRuntimes.set(${JSONObject.quote(id)},__cxRuntime);
         {
           const globalThis=__cxExtensionGlobal;
           const self=__cxExtensionGlobal;
@@ -169,6 +215,7 @@ object ExtensionBackgroundHost {
           try {
             (()=>{ ${code} })();
           } catch(error) {
+            __cxRealGlobal.__cxExtensionRuntimes.delete(${JSONObject.quote(id)});
             __cxRealGlobal.__cxExtensionBackgrounds.delete(${JSONObject.quote(id)});
             console.error('[ChromeXt Extension background ${id}]', error);
           }
