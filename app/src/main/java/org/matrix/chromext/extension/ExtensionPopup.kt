@@ -80,12 +80,29 @@ object ExtensionPopup {
         };
         const __cxOpen=window.open.bind(window);
         window.open=(url,...args)=>__cxOpen(__cxResolveExtensionUrl(url),...args);
+        window.close=()=>{
+          __cxTarget.postMessage({__chromextExtensionFrame:true,direction:'close',token:__cxToken,extensionId:${JSONObject.quote(id)}},'*');
+        };
         document.addEventListener('click',(event)=>{
           const anchor=event.target&&event.target.closest?event.target.closest('a[href]'):null;
           if(!anchor)return;
           const resolved=__cxResolveExtensionUrl(anchor.getAttribute('href'));
           if(resolved!==anchor.getAttribute('href'))anchor.setAttribute('href',resolved);
         },true);
+        const __cxReportSize=()=>{
+          try{
+            const root=document.documentElement;
+            const body=document.body;
+            const height=Math.max(
+              root?root.scrollHeight:0,
+              root?root.offsetHeight:0,
+              body?body.scrollHeight:0,
+              body?body.offsetHeight:0,
+              360
+            );
+            __cxTarget.postMessage({__chromextExtensionFrame:true,direction:'resize',token:__cxToken,extensionId:${JSONObject.quote(id)},height},'*');
+          }catch(_){}
+        };
         const __cxNative={
           dispatch(action,payload){
             __cxTarget.postMessage({__chromextExtensionFrame:true,direction:'dispatch',token:__cxToken,extensionId:${JSONObject.quote(id)},action,payload},'*');
@@ -114,6 +131,14 @@ object ExtensionPopup {
         globalThis.chrome=__cxCreateExtensionApi(__cxExtension,__cxContext,__cxNative);
         globalThis.browser=globalThis.chrome;
         __cxTarget.postMessage({__chromextExtensionFrame:true,direction:'ready',token:__cxToken,extensionId:${JSONObject.quote(id)}},'*');
+        if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',__cxReportSize,{once:true});
+        else setTimeout(__cxReportSize,0);
+        window.addEventListener('load',__cxReportSize,{once:true});
+        if(typeof ResizeObserver==='function'){
+          const observer=new ResizeObserver(__cxReportSize);
+          const observe=()=>{ if(document.documentElement)observer.observe(document.documentElement); };
+          if(document.documentElement)observe(); else document.addEventListener('DOMContentLoaded',observe,{once:true});
+        }
       })();
       </script>
     """.trimIndent()
