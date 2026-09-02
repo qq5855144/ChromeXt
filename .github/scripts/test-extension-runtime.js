@@ -49,9 +49,7 @@ const native = {
         ? { os: "android", arch: "arm64", nacl_arch: "" }
         : request.api === "scripting.getRegisteredContentScripts"
           ? []
-          : request.api === "tabs.query"
-            ? [{ id: "cx-test", url: "https://example.com/page", active: true }]
-            : null;
+          : null;
     queueMicrotask(() =>
       emit("cx_extension_response", {
         ok: true,
@@ -116,6 +114,7 @@ const context = {
 const chrome = sandbox.__cxFactory(manifest, context, native);
 sandbox.chrome = chrome;
 sandbox.browser = chrome;
+sandbox.__cxContext = context;
 vm.runInNewContext(compatSource, sandbox, { filename: "extension_compat.js" });
 
 (async () => {
@@ -186,8 +185,16 @@ vm.runInNewContext(compatSource, sandbox, { filename: "extension_compat.js" });
   assert.equal(userScripts.length, 1);
   assert.equal(userScripts[0].id, "userscript-1");
 
-  const tab = await chrome.tabs.get("cx-test");
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  assert.equal(tabs.length, 1);
+  assert.equal(tabs[0].url, "https://example.com/page");
+  const tab = await chrome.tabs.get(tabs[0].id);
   assert.equal(tab.url, "https://example.com/page");
+  assert.equal(
+    calls.some((call) => call.api === "tabs.query" || call.api === "tabs.getCurrent"),
+    false,
+    "compat popup/background tab snapshots must not trigger native DevTools discovery"
+  );
 
   console.log("WebExtension runtime and complex MV3 compatibility smoke test passed");
 })().catch((error) => {
