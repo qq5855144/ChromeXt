@@ -80,6 +80,11 @@ contains(
   "Dock must receive the private ChromeXt runtime symbol"
 );
 contains(
+  local,
+  '"window.location.assign(MANAGER_URL); opened = true;"',
+  "Dock manager navigation must stay in the current real tab instead of relying on a popup"
+);
+contains(
   manager,
   'private const val SCRIPT_DOCK_SETTINGS_ORIGIN = "chromext-internal://script-dock"',
   "Native settings key must match the JS dock"
