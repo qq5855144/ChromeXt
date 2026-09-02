@@ -2,6 +2,7 @@ package org.matrix.chromext.extension
 
 import java.io.File
 import java.io.FileReader
+import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
@@ -9,49 +10,50 @@ import org.matrix.chromext.script.Local
 import org.matrix.chromext.utils.Log
 
 /**
- * Compatibility host for extension background code.
+ * Event-driven compatibility host for extension background code.
  *
- * Background code must never be started as part of a normal website navigation. In particular, do
- * not synchronously discover DevTools pages or resolve Chromium tab ids here: those operations can
- * block the browser UI on WebView-based hosts. A compatibility background may only be hosted from
- * one of ChromeXt's local loopback extension pages.
+ * Background/service-worker code is never started from normal navigation and never discovers
+ * DevTools pages. It is lazily attached to an already available browser tab only when an extension
+ * event actually needs a background context. The host can migrate when the previous tab disappears.
  */
 object ExtensionBackgroundHost {
-  private val hosts = ConcurrentHashMap<String, String>()
+  data class PreparedHost(val tab: Any, val bootstrap: String?)
 
-  fun bootstrap(url: String, hostTab: Any? = null): List<String> {
-    if (!isLocalExtensionResource(url)) return emptyList()
+  private data class Host(val tab: WeakReference<Any>, val url: String)
 
-    val currentHost = "local:${System.identityHashCode(Chrome.getTab(hostTab))}"
-    val directory = File(Chrome.getContext().getExternalFilesDir(null), "Extension")
-    val result = mutableListOf<String>()
-    val manifests = LocalFiles.managementList()
-    for (i in 0 until manifests.length()) {
-      val manifest = manifests.optJSONObject(i) ?: continue
-      if (!manifest.optBoolean("enabled")) continue
-      val background = manifest.optJSONObject("background") ?: continue
-      val id = manifest.optString("id")
-      if (id.isBlank()) continue
-      val existing = hosts[id]
-      if (existing != null && existing != currentHost) continue
-      val code = backgroundCode(File(directory, id), manifest, background)
-      if (code.isBlank()) continue
-      hosts[id] = currentHost
-      result.add(buildRuntime(manifest, code, url))
-    }
-    return result
+  private val hosts = ConcurrentHashMap<String, Host>()
+
+  fun prepare(id: String, preferredTab: Any? = null): PreparedHost? {
+    val manifest = manifest(id) ?: return null
+    val background = manifest.optJSONObject("background") ?: return null
+    val directory = File(Chrome.getContext().getExternalFilesDir(null), "Extension/$id")
+    val code = backgroundCode(directory, manifest, background)
+    if (code.isBlank()) return null
+
+    val preferred = Chrome.getTab(preferredTab) ?: return null
+    val previous = hosts[id]
+    val previousTab = previous?.tab?.get()
+    val previousAlive =
+        previousTab != null && runCatching { Chrome.checkTab(previousTab) }.getOrDefault(false)
+    val target = if (previousAlive) previousTab!! else preferred
+    val targetUrl = Chrome.getUrl(target) ?: Chrome.getUrl(preferred) ?: "about:blank"
+    val needsBootstrap = !previousAlive || previous?.url != targetUrl
+
+    hosts[id] = Host(WeakReference(target), targetUrl)
+    return PreparedHost(target, if (needsBootstrap) buildRuntime(manifest, code, targetUrl) else null)
   }
 
   fun release(id: String) {
     hosts.remove(id)
   }
 
-  private fun isLocalExtensionResource(url: String): Boolean {
-    if (!url.startsWith("http://127.0.0.1:")) return false
-    val portStart = "http://127.0.0.1:".length
-    val slash = url.indexOf('/', portStart)
-    if (slash <= portStart) return false
-    return url.substring(portStart, slash).toIntOrNull() != null
+  private fun manifest(id: String): JSONObject? {
+    val manifests = LocalFiles.managementList()
+    for (i in 0 until manifests.length()) {
+      val candidate = manifests.optJSONObject(i) ?: continue
+      if (candidate.optString("id") == id && candidate.optBoolean("enabled")) return candidate
+    }
+    return null
   }
 
   private fun backgroundCode(directory: File, manifest: JSONObject, background: JSONObject): String {
@@ -110,6 +112,7 @@ object ExtensionBackgroundHost {
             .put("url", url)
             .put("frameId", JSONObject.NULL)
             .put("extensionId", id)
+            .put("contextId", "background:$id")
     return """
       (()=>{
         if(!globalThis.__cxExtensionBackgrounds) globalThis.__cxExtensionBackgrounds=new Set();

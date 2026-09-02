@@ -11,9 +11,21 @@ const pages = fs.readFileSync(
   "app/src/main/java/org/matrix/chromext/extension/ExtensionPages.kt",
   "utf8"
 );
+const backgroundHost = fs.readFileSync(
+  "app/src/main/java/org/matrix/chromext/extension/ExtensionBackgroundHost.kt",
+  "utf8"
+);
+const popupHost = fs.readFileSync(
+  "app/src/main/java/org/matrix/chromext/extension/ExtensionPopup.kt",
+  "utf8"
+);
 const ui = fs.readFileSync("app/src/main/assets/userscript_manager.js", "utf8");
 const addon = fs.readFileSync(
   "app/src/main/assets/extension_manager_addon.js",
+  "utf8"
+);
+const popupAddon = fs.readFileSync(
+  "app/src/main/assets/extension_popup_addon.js",
   "utf8"
 );
 const installerUi = fs.readFileSync(
@@ -53,6 +65,49 @@ assert.ok(localGuard >= 0, "extension page bootstrap must have a local-resource 
 assert.ok(
   enumerateExtensions > localGuard,
   "extension enumeration/resource server startup must happen only after the local-resource guard"
+);
+
+assert.ok(
+  backgroundHost.includes("fun prepare(") && backgroundHost.includes("WeakReference"),
+  "background compatibility must be lazily attached to an existing live tab"
+);
+assert.equal(
+  /getTabId|getInspectPages|wakeUpDevTools/.test(backgroundHost),
+  false,
+  "lazy extension backgrounds must never synchronously probe DevTools"
+);
+assert.ok(
+  bridge.includes("ExtensionBackgroundHost.prepare") &&
+    bridge.includes("messageRoutes") &&
+    bridge.includes("deliverMessageResponse"),
+  "runtime messaging must lazily start backgrounds and retain a point-to-point response route"
+);
+assert.equal(
+  bridge.includes('Chrome.broadcast("cx_extension_message"'),
+  false,
+  "runtime messages must not scan/broadcast through all DevTools pages"
+);
+assert.equal(
+  bridge.includes('Chrome.broadcast("cx_extension_message_response"'),
+  false,
+  "runtime message responses must return directly to the sender"
+);
+
+assert.ok(
+  popupHost.includes('manifest.optJSONObject("page_action")') &&
+    popupHost.includes("globalThis.chrome=__cxCreateExtensionApi") &&
+    popupHost.includes("__chromextExtensionFrame"),
+  "popup documents must support MV2 page_action and create chrome.* before extension scripts run"
+);
+assert.ok(
+  popupAddon.includes('sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"') &&
+    popupAddon.includes('data.action !== "extensionApi"') &&
+    popupAddon.includes('op: "popup"'),
+  "manager popup panel must isolate extension UI and only relay extensionApi requests"
+);
+assert.ok(
+  local.includes('ctx.assets.open("extension_popup_addon.js")'),
+  "manager must load the isolated extension popup layer"
 );
 
 assert.ok(
@@ -115,4 +170,4 @@ assert.ok(
   "manager must load the reliable extension installer layer"
 );
 
-console.log("Extension navigation safety and local/direct-install regression checks passed");
+console.log("Extension navigation, runtime, popup and installation safety checks passed");

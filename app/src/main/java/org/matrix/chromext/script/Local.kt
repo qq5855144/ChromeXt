@@ -130,6 +130,8 @@ object Local {
             "\n" +
             ctx.assets.open("extension_manager_addon.js").bufferedReader().use { it.readText() } +
             "\n" +
+            ctx.assets.open("extension_popup_addon.js").bufferedReader().use { it.readText() } +
+            "\n" +
             ctx.assets.open("extension_install_fix.js").bufferedReader().use { it.readText() }
     val css =
         JSONArray(ctx.assets.open("eruda.css").bufferedReader().use { it.readText() }.split("\n\n"))
