@@ -40,6 +40,10 @@ const popupAddon = fs.readFileSync(
   "app/src/main/assets/extension_popup_addon.js",
   "utf8"
 );
+const compatAsset = fs.readFileSync(
+  "app/src/main/assets/extension_compat.js",
+  "utf8"
+);
 const installerUi = fs.readFileSync(
   "app/src/main/assets/extension_install_fix.js",
   "utf8"
@@ -108,14 +112,30 @@ assert.equal(
 assert.ok(
   popupHost.includes('manifest.optJSONObject("page_action")') &&
     popupHost.includes("globalThis.chrome=__cxCreateExtensionApi") &&
-    popupHost.includes("__chromextExtensionFrame"),
-  "popup documents must support MV2 page_action and create chrome.* before extension scripts run"
+    popupHost.includes("__chromextExtensionFrame") &&
+    popupHost.includes("ExtensionCompat.script") &&
+    popupHost.includes("ResizeObserver"),
+  "popup documents must create chrome.*, load compatibility namespaces and report their sheet size"
 );
 assert.ok(
-  popupAddon.includes('sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"') &&
+  popupAddon.includes("allow-same-origin") &&
+    popupAddon.includes("allow-popups-to-escape-sandbox") &&
+    popupAddon.includes("cx-extension-popup-sheet") &&
+    popupAddon.includes("cx-extension-toolbar-icon") &&
     popupAddon.includes('data.action !== "extensionApi"') &&
     popupAddon.includes('op: "popup"'),
-  "manager popup panel must isolate extension UI and only relay extensionApi requests"
+  "manager must expose an extension-icon action and render the popup as a storage-capable bottom sheet"
+);
+assert.ok(
+  backgroundHost.includes("ExtensionCompat.script") && pages.includes("ExtensionCompat.script"),
+  "background and full extension pages must load the same soft compatibility namespaces"
+);
+assert.ok(
+  compatAsset.includes("declarativeNetRequest") &&
+    compatAsset.includes("webRequest") &&
+    compatAsset.includes("userScripts") &&
+    compatAsset.includes("MAX_NUMBER_OF_DYNAMIC_RULES"),
+  "complex MV3 extensions must receive boot-safe webRequest, DNR and userScripts API shapes"
 );
 assert.ok(
   local.includes('ctx.assets.open("extension_popup_addon.js")'),
@@ -205,4 +225,4 @@ assert.ok(
   "manager must load the reliable extension installer layer"
 );
 
-console.log("Extension navigation, runtime, virtual URL, popup and installation safety checks passed");
+console.log("Extension navigation, runtime, action popup, virtual URL and installation safety checks passed");
