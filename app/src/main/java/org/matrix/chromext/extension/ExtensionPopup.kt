@@ -130,6 +130,7 @@ object ExtensionPopup {
         ${LocalFiles.script}
         globalThis.chrome=__cxCreateExtensionApi(__cxExtension,__cxContext,__cxNative);
         globalThis.browser=globalThis.chrome;
+        ${ExtensionCompat.script}
         __cxTarget.postMessage({__chromextExtensionFrame:true,direction:'ready',token:__cxToken,extensionId:${JSONObject.quote(id)}},'*');
         if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',__cxReportSize,{once:true});
         else setTimeout(__cxReportSize,0);
