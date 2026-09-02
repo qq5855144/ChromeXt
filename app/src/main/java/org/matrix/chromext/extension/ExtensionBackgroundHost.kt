@@ -10,11 +10,11 @@ import org.matrix.chromext.script.Local
 import org.matrix.chromext.utils.Log
 
 /**
- * Event-driven compatibility host for extension background code.
+ * Browser-owned compatibility host for extension background/service-worker code.
  *
- * Background/service-worker code is never started from normal navigation and never discovers
- * DevTools pages. It is lazily attached to an already available browser tab only when an extension
- * event actually needs a background context. The host can migrate when the previous tab disappears.
+ * ChromeXt does not discover DevTools pages here. Backgrounds are attached only to a browser tab
+ * object already supplied by the normal page lifecycle. A navigation invalidates the old host and
+ * causes a clean service-worker-style restart on the new document.
  */
 object ExtensionBackgroundHost {
   data class PreparedHost(val tab: Any, val bootstrap: String?)
@@ -23,6 +23,15 @@ object ExtensionBackgroundHost {
 
   private val hosts = ConcurrentHashMap<String, Host>()
 
+  /** Prepare every enabled extension background for the already-known top-level browser tab. */
+  fun prepareAll(preferredTab: Any? = null): List<String> {
+    val target = ExtensionActiveTab.preferred(preferredTab) ?: Chrome.getTab(preferredTab) ?: return emptyList()
+    return LocalFiles.backgroundExtensionIds().mapNotNull { id ->
+      val prepared = prepare(id, target)
+      prepared?.bootstrap
+    }
+  }
+
   fun prepare(id: String, preferredTab: Any? = null): PreparedHost? {
     val manifest = manifest(id) ?: return null
     val background = manifest.optJSONObject("background") ?: return null
@@ -30,13 +39,15 @@ object ExtensionBackgroundHost {
     val code = backgroundCode(directory, manifest, background)
     if (code.isBlank()) return null
 
-    val preferred = Chrome.getTab(preferredTab) ?: return null
+    val preferred = ExtensionActiveTab.preferred(preferredTab) ?: Chrome.getTab(preferredTab) ?: return null
     val previous = hosts[id]
     val previousTab = previous?.tab?.get()
     val previousAlive =
-        previousTab != null && runCatching { Chrome.checkTab(previousTab) }.getOrDefault(false)
+        previousTab != null &&
+            runCatching { Chrome.checkTab(previousTab) }.getOrDefault(false) &&
+            Chrome.getUrl(previousTab) == previous?.url
     val target = if (previousAlive) previousTab!! else preferred
-    val targetUrl = Chrome.getUrl(target) ?: Chrome.getUrl(preferred) ?: "about:blank"
+    val targetUrl = Chrome.getUrl(target) ?: ExtensionActiveTab.url(Chrome.getUrl(preferred))
     val needsBootstrap = !previousAlive || previous?.url != targetUrl
 
     hosts[id] = Host(WeakReference(target), targetUrl)
@@ -45,6 +56,10 @@ object ExtensionBackgroundHost {
 
   fun release(id: String) {
     hosts.remove(id)
+  }
+
+  fun releaseAll() {
+    hosts.clear()
   }
 
   private fun manifest(id: String): JSONObject? {
@@ -106,26 +121,52 @@ object ExtensionBackgroundHost {
 
   private fun buildRuntime(manifest: JSONObject, code: String, url: String): String {
     val id = manifest.optString("id")
+    val activeTab = ExtensionActiveTab.snapshot()
     val context =
         JSONObject()
             .put("type", "background")
             .put("url", url)
+            .put("activeUrl", activeTab.optString("url", url))
+            .put("activeTab", activeTab)
             .put("frameId", JSONObject.NULL)
             .put("extensionId", id)
             .put("contextId", "background:$id")
     return """
       (()=>{
-        if(!globalThis.__cxExtensionBackgrounds) globalThis.__cxExtensionBackgrounds=new Set();
-        if(globalThis.__cxExtensionBackgrounds.has(${JSONObject.quote(id)})) return;
-        globalThis.__cxExtensionBackgrounds.add(${JSONObject.quote(id)});
+        const __cxRealGlobal=globalThis;
+        if(!__cxRealGlobal.__cxExtensionBackgrounds) __cxRealGlobal.__cxExtensionBackgrounds=new Set();
+        if(__cxRealGlobal.__cxExtensionBackgrounds.has(${JSONObject.quote(id)})) return;
+        __cxRealGlobal.__cxExtensionBackgrounds.add(${JSONObject.quote(id)});
         const __cxExtension=${manifest};
         const __cxContext=${context};
         const __cxNative=Symbol.${Local.name}.unlock(${Local.key});
         ${LocalFiles.script}
         const chrome=__cxCreateExtensionApi(__cxExtension,__cxContext,__cxNative);
         const browser=chrome;
-        ${ExtensionCompat.script}
-        try { ${code} } catch(error) { console.error('[ChromeXt Extension background ${id}]', error); }
+        const __cxOverlay=Object.create(null);
+        __cxOverlay.chrome=chrome;
+        __cxOverlay.browser=browser;
+        const __cxExtensionGlobal=new Proxy(__cxRealGlobal,{
+          get(target,key){
+            if(Object.prototype.hasOwnProperty.call(__cxOverlay,key)) return __cxOverlay[key];
+            const value=Reflect.get(target,key,target);
+            return typeof value==='function'?value.bind(target):value;
+          },
+          set(target,key,value){ __cxOverlay[key]=value; return true; },
+          has(target,key){ return Object.prototype.hasOwnProperty.call(__cxOverlay,key)||key in target; }
+        });
+        {
+          const globalThis=__cxExtensionGlobal;
+          const self=__cxExtensionGlobal;
+          const window=__cxExtensionGlobal;
+          ${ExtensionCompat.script}
+          try {
+            (()=>{ ${code} })();
+          } catch(error) {
+            __cxRealGlobal.__cxExtensionBackgrounds.delete(${JSONObject.quote(id)});
+            console.error('[ChromeXt Extension background ${id}]', error);
+          }
+        }
       })();
       //# sourceURL=local://ChromeXt/extension/${id}/background-host
     """.trimIndent()
