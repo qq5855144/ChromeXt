@@ -43,6 +43,7 @@ object ExtensionPages {
         ${LocalFiles.script}
         globalThis.chrome=__cxCreateExtensionApi(__cxExtension,__cxContext,__cxNative);
         globalThis.browser=globalThis.chrome;
+        ${ExtensionCompat.script}
       })();
       //# sourceURL=local://ChromeXt/extension-page/${extension.getString("id")}
     """.trimIndent()
