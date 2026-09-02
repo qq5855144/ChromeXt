@@ -105,11 +105,27 @@ const manifest = {
     rule_resources: [{ id: "ruleset_1", enabled: true, path: "rules.json" }],
   },
 };
-const context = {
-  type: "content",
+const activeTab = {
+  id: "cx-local-123456",
   url: "https://example.com/page",
+  title: "Example",
+  active: true,
+  highlighted: true,
+  selected: true,
+  pinned: false,
+  incognito: false,
+  windowId: 0,
+  index: 0,
+  status: "complete",
+};
+const context = {
+  type: "extension_page",
+  url: "http://127.0.0.1:12345/popup.html",
+  activeUrl: activeTab.url,
+  activeTab,
   frameId: null,
   extensionId: manifest.id,
+  contextId: "popup:test",
 };
 const chrome = sandbox.__cxFactory(manifest, context, native);
 sandbox.chrome = chrome;
@@ -134,27 +150,27 @@ vm.runInNewContext(compatSource, sandbox, { filename: "extension_compat.js" });
 
   emit("cx_extension_message", {
     extensionId: manifest.id,
-    target: "extension",
+    target: "content",
     senderContext: { contextId: "background:test:top" },
-    messageId: "ignored",
-    message: "not-for-content",
+    messageId: "ignored-content",
+    message: "not-for-extension-page",
   });
-  assert.equal(received, 0, "content contexts must ignore extension-only messages");
+  assert.equal(received, 0, "extension pages must ignore content-only messages");
 
   emit("cx_extension_message", {
     extensionId: manifest.id,
-    target: "content",
+    target: "extension",
     senderContext: { contextId: "background:test:top" },
     messageId: "accepted",
     message: "hello",
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(received, 1, "content-targeted messages must reach listeners");
+  assert.equal(received, 1, "extension-targeted messages must reach popup/options listeners");
   assert.ok(calls.some((call) => call.api === "runtime.sendMessageResponse"));
 
   emit("cx_extension_message", {
     extensionId: manifest.id,
-    target: "content",
+    target: "extension",
     senderContext: { contextId: context.contextId },
     messageId: "self",
     message: "self",
@@ -165,10 +181,25 @@ vm.runInNewContext(compatSource, sandbox, { filename: "extension_compat.js" });
   assert.deepEqual(Array.from(registered), []);
   assert.ok(calls.some((call) => call.api === "scripting.getRegisteredContentScripts"));
 
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  assert.equal(tabs.length, 1);
+  assert.equal(tabs[0].id, activeTab.id, "popup/background must receive the real remembered tab id");
+  assert.equal(tabs[0].url, activeTab.url);
+  const tab = await chrome.tabs.get(activeTab.id);
+  assert.equal(tab.id, activeTab.id);
+  assert.equal(tab.url, activeTab.url);
+  assert.equal(
+    calls.some((call) => call.api === "tabs.query" || call.api === "tabs.getCurrent" || call.api === "tabs.get"),
+    false,
+    "compat active-tab snapshots must not trigger native DevTools discovery"
+  );
+
   await assert.rejects(
-    chrome.tabs.sendMessage("missing-tab", { ping: true }),
+    chrome.tabs.sendMessage(activeTab.id, { ping: true }),
     /Target tab is not available/
   );
+  const tabMessage = calls.find((call) => call.api === "tabs.sendMessage");
+  assert.equal(tabMessage.args[0], activeTab.id, "tabs.sendMessage must use the real remembered tab id");
 
   assert.ok(chrome.webRequest?.onBeforeRequest?.addListener);
   assert.equal(chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES, 30000);
@@ -185,18 +216,7 @@ vm.runInNewContext(compatSource, sandbox, { filename: "extension_compat.js" });
   assert.equal(userScripts.length, 1);
   assert.equal(userScripts[0].id, "userscript-1");
 
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  assert.equal(tabs.length, 1);
-  assert.equal(tabs[0].url, "https://example.com/page");
-  const tab = await chrome.tabs.get(tabs[0].id);
-  assert.equal(tab.url, "https://example.com/page");
-  assert.equal(
-    calls.some((call) => call.api === "tabs.query" || call.api === "tabs.getCurrent"),
-    false,
-    "compat popup/background tab snapshots must not trigger native DevTools discovery"
-  );
-
-  console.log("WebExtension runtime and complex MV3 compatibility smoke test passed");
+  console.log("WebExtension runtime, active-tab routing and complex MV3 compatibility smoke test passed");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
