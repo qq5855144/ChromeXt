@@ -14,18 +14,20 @@ object ExtensionPages {
 
   fun bootstrap(url: String): String? {
     // Never enumerate extensions or start loopback resource servers while a normal website is
-    // navigating. Extension pages are always served by ChromeXt's 127.0.0.1 resource host.
+    // navigating. Extension pages are always served by ChromeXt's 127.0.0.1 resource hosts.
     if (!isLocalExtensionResource(url)) return null
 
-    val manifests = LocalFiles.managementList()
-    var manifest: JSONObject? = null
-    for (i in 0 until manifests.length()) {
-      val candidate = manifests.optJSONObject(i) ?: continue
-      if (!candidate.optBoolean("enabled")) continue
-      val base = candidate.optString("baseUrl")
-      if (base.isNotBlank() && url.startsWith(base)) {
-        manifest = candidate
-        break
+    var manifest: JSONObject? = ExtensionPopup.manifestForUrl(url)
+    if (manifest == null) {
+      val manifests = LocalFiles.managementList()
+      for (i in 0 until manifests.length()) {
+        val candidate = manifests.optJSONObject(i) ?: continue
+        if (!candidate.optBoolean("enabled")) continue
+        val base = candidate.optString("baseUrl")
+        if (base.isNotBlank() && url.startsWith(base)) {
+          manifest = candidate
+          break
+        }
       }
     }
     val extension = manifest ?: return null
@@ -33,6 +35,7 @@ object ExtensionPages {
         JSONObject()
             .put("type", "extension_page")
             .put("url", url)
+            .put("activeUrl", url)
             .put("frameId", JSONObject.NULL)
             .put("extensionId", extension.getString("id"))
     return """
