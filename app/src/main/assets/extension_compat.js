@@ -13,6 +13,8 @@
 
   const extensionId = api.runtime.id;
   const runtimeContext = typeof __cxContext !== "undefined" && __cxContext ? __cxContext : {};
+  const extensionManifest =
+    typeof __cxExtension !== "undefined" && __cxExtension ? __cxExtension : {};
   const roots = globalThis.__cxExtensionCompatState || (globalThis.__cxExtensionCompatState = {});
   const state = roots[extensionId] || (roots[extensionId] = {
     dynamicRules: new Map(),
@@ -308,6 +310,17 @@
     api.tabs.getZoom ||= (tabId, callback) => result(1, callback);
     api.tabs.setZoom ||= (tabId, factor, callback) => result(undefined, callback);
     api.tabs.detectLanguage ||= (tabId, callback) => result(navigator.language || "en", callback);
+  }
+
+  // Route options-page navigation through ChromeXt rather than relying on iframe window.open.
+  // This keeps chrome-extension:// virtual routing, active-tab selection and browser differences in
+  // the same native API path as other extension-created tabs.
+  if (extensionManifest.optionsUrl && api.tabs?.create) {
+    api.runtime.openOptionsPage = (callback) => {
+      const promise = Promise.resolve(api.tabs.create({ url: extensionManifest.optionsUrl })).then(() => undefined);
+      if (typeof callback === "function") promise.then(() => callback()).catch(() => callback());
+      return promise;
+    };
   }
 
   if (api.windows) {
