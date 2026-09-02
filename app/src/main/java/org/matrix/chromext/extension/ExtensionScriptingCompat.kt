@@ -33,11 +33,16 @@ object ExtensionScriptingCompat {
     val tabId = target?.optString("tabId")?.takeIf { it.isNotBlank() }
     return runCatching {
           if (tabId != null) {
-            val client = DevSessions.new(tabId, "extension-css")
-            client.evaluateJavascript(expression)
-            client.close()
+            val remembered = ExtensionActiveTab.resolve(tabId)
+            if (remembered != null) {
+              Chrome.evaluateJavascript(listOf(expression), remembered)
+            } else {
+              val client = DevSessions.new(tabId, "extension-css")
+              client.evaluateJavascript(expression)
+              client.close()
+            }
           } else {
-            Chrome.evaluateJavascript(listOf(expression), currentTab)
+            Chrome.evaluateJavascript(listOf(expression), ExtensionActiveTab.preferred(currentTab))
           }
           success(JSONObject.NULL)
         }
@@ -66,8 +71,9 @@ object ExtensionScriptingCompat {
   }
 
   private fun cssKey(extensionId: String, css: String): String {
-    val digest = MessageDigest.getInstance("SHA-256")
-        .digest((extensionId + "\u0000" + css).toByteArray(Charsets.UTF_8))
+    val digest =
+        MessageDigest.getInstance("SHA-256")
+            .digest((extensionId + "\u0000" + css).toByteArray(Charsets.UTF_8))
     return digest.take(12).joinToString("") { "%02x".format(it.toInt() and 0xff) }
   }
 
