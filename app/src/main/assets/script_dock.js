@@ -23,7 +23,7 @@
     open: false,
     extended: false,
     dragging: false,
-    dragStartY: 0,
+    dragStartY: null,
     dragStartRatio: 0.5,
     retractTimer: 0,
     commandScriptId: null,
@@ -46,6 +46,8 @@
 
   const shadow = host.attachShadow({ mode: "closed" });
   const style = document.createElement("style");
+  const nonceSource = document.querySelector("script[nonce],style[nonce]");
+  if (nonceSource && nonceSource.nonce) style.nonce = nonceSource.nonce;
   style.textContent = `
     :host { all: initial; }
     * { box-sizing: border-box; }
@@ -343,7 +345,7 @@
   const closeButton = shadow.querySelector(".cx-close");
 
   function stopEvent(event) {
-    event.stopPropagation();
+    if (event && typeof event.stopPropagation === "function") event.stopPropagation();
   }
 
   function viewportMetrics() {
@@ -604,16 +606,19 @@
     const viewport = viewportMetrics();
     state.y = Math.min(0.92, Math.max(0.08, state.dragStartRatio + delta / viewport.height));
     applyPosition();
-    if (event.cancelable) event.preventDefault();
+    if (event.cancelable && typeof event.preventDefault === "function") event.preventDefault();
     stopEvent(event);
   }
 
-  function finishPointer(event) {
+  function finishPointer(event, cancelled = false) {
+    if (state.dragStartY === null) return;
     const wasDragging = state.dragging;
     state.dragStartY = null;
     state.dragging = false;
     dockButton.classList.remove("cx-dragging");
-    if (wasDragging) {
+    if (cancelled) {
+      scheduleRetract(900);
+    } else if (wasDragging) {
       persistPosition();
       scheduleRetract(1100);
     } else if (!state.open) {
@@ -621,7 +626,17 @@
     } else {
       closePanel();
     }
-    if (event) stopEvent(event);
+    stopEvent(event);
+  }
+
+  function touchProxy(event, touch) {
+    return {
+      clientY: touch ? touch.clientY : 0,
+      button: 0,
+      cancelable: event.cancelable,
+      preventDefault: () => event.preventDefault(),
+      stopPropagation: () => event.stopPropagation(),
+    };
   }
 
   // Pointer Events cover modern Chromium/WebView. A touch/mouse fallback keeps older
@@ -629,10 +644,11 @@
   if ("PointerEvent" in window) {
     dockButton.addEventListener("pointerdown", onPointerDown);
     dockButton.addEventListener("pointermove", onPointerMove);
-    dockButton.addEventListener("pointerup", finishPointer);
-    dockButton.addEventListener("pointercancel", finishPointer);
+    dockButton.addEventListener("pointerup", (event) => finishPointer(event));
+    dockButton.addEventListener("pointercancel", (event) => finishPointer(event, true));
   } else {
     let mouseDown = false;
+    let touchActive = false;
     dockButton.addEventListener("mousedown", (event) => {
       mouseDown = true;
       onPointerDown(event);
@@ -645,13 +661,25 @@
     }, true);
     dockButton.addEventListener("touchstart", (event) => {
       const touch = event.touches[0];
-      if (touch) onPointerDown(touch);
-    }, { passive: true });
-    dockButton.addEventListener("touchmove", (event) => {
-      const touch = event.touches[0];
-      if (touch) onPointerMove(touch);
+      if (!touch) return;
+      touchActive = true;
+      onPointerDown(touchProxy(event, touch));
     }, { passive: false });
-    dockButton.addEventListener("touchend", (event) => finishPointer(event), { passive: true });
+    dockButton.addEventListener("touchmove", (event) => {
+      if (!touchActive) return;
+      const touch = event.touches[0];
+      if (touch) onPointerMove(touchProxy(event, touch));
+    }, { passive: false });
+    dockButton.addEventListener("touchend", (event) => {
+      if (!touchActive) return;
+      touchActive = false;
+      finishPointer(touchProxy(event, event.changedTouches[0]));
+    }, { passive: false });
+    dockButton.addEventListener("touchcancel", (event) => {
+      if (!touchActive) return;
+      touchActive = false;
+      finishPointer(touchProxy(event, event.changedTouches[0]), true);
+    }, { passive: false });
   }
 
   dockButton.addEventListener("mouseenter", () => {
