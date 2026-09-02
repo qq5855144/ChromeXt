@@ -45,6 +45,9 @@ jobs:
             node --check "$file"
           done < <(find app/src/main/assets -type f -name '*.js' -print0)
 
+      - name: Test UserScript Script Dock
+        run: node tools/test_userscript_script_dock.js
+
       - name: Run unit tests
         run: ./gradlew --stacktrace app:testDebugUnitTest
 
