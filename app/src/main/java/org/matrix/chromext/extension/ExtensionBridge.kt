@@ -21,16 +21,21 @@ object ExtensionBridge {
     return when (data.optString("op")) {
       "list" -> managerEvent("extension_list", LocalFiles.managementList())
       "setEnabled" -> {
-        val changed = LocalFiles.setEnabled(data.getString("id"), data.getBoolean("enabled"))
+        val id = data.getString("id")
+        val enabled = data.getBoolean("enabled")
+        val changed = LocalFiles.setEnabled(id, enabled)
+        if (changed && !enabled) ExtensionBackgroundHost.release(id)
         managerEvent(
             "extension_changed",
-            JSONObject().put("ok", changed).put("type", "enabled").put("id", data.getString("id")))
+            JSONObject().put("ok", changed).put("type", "enabled").put("id", id))
       }
       "delete" -> {
-        val changed = LocalFiles.delete(data.getString("id"))
+        val id = data.getString("id")
+        ExtensionBackgroundHost.release(id)
+        val changed = LocalFiles.delete(id)
         managerEvent(
             "extension_changed",
-            JSONObject().put("ok", changed).put("type", "delete").put("id", data.getString("id")))
+            JSONObject().put("ok", changed).put("type", "delete").put("id", id))
       }
       "installStart" ->
           managerEvent(
@@ -96,6 +101,8 @@ object ExtensionBridge {
         JSONObject()
             .put("extensionId", extensionId)
             .put("messageId", messageId)
+            .put("target", if (api == "tabs.sendMessage") "content" else "extension")
+            .put("senderContext", request.optJSONObject("context") ?: JSONObject())
             .put("message", message ?: JSONObject.NULL)
             .put(
                 "sender",
