@@ -12,8 +12,17 @@ import org.matrix.chromext.utils.Log
 
 object ExtensionBridge {
   private data class MessageRoute(val tab: WeakReference<Any>, val frameId: String?)
+  private data class ContextRoute(val tab: WeakReference<Any>, val frameId: String?)
 
   private val messageRoutes = ConcurrentHashMap<String, MessageRoute>()
+  private val popupRoutes = ConcurrentHashMap<String, WeakReference<Any>>()
+  private val extensionPageRoutes = ConcurrentHashMap<String, MutableList<ContextRoute>>()
+
+  private fun success(value: Any? = JSONObject.NULL): JSONObject =
+      JSONObject().put("ok", true).put("value", value ?: JSONObject.NULL)
+
+  private fun failure(message: String): JSONObject =
+      JSONObject().put("ok", false).put("error", message)
 
   private fun managerEvent(name: String, detail: Any): String =
       "ChromeXt.post('$name', ${detail.toString()});"
@@ -22,6 +31,41 @@ object ExtensionBridge {
     val args = JSONArray()
     if (value != null) args.put(value)
     return LocalFiles.api(id, JSONObject().put("api", api).put("args", args), Chrome.getTab(), null)
+  }
+
+  private fun extensionInfo(id: String): JSONObject? {
+    val list = LocalFiles.managementList()
+    for (i in 0 until list.length()) {
+      val item = list.optJSONObject(i) ?: continue
+      if (item.optString("id") == id) return item
+    }
+    return null
+  }
+
+  private fun popupPath(extension: JSONObject?): String {
+    if (extension == null) return ""
+    val action =
+        extension.optJSONObject("action")
+            ?: extension.optJSONObject("browser_action")
+            ?: extension.optJSONObject("page_action")
+    return action?.optString("default_popup")?.trim().orEmpty()
+  }
+
+  private fun preparePopup(id: String): String {
+    val active = ExtensionActiveTab.preferred(Chrome.getTab()) ?: Chrome.getTab()
+    val prepared = ExtensionBackgroundHost.prepare(id, active)
+    if (prepared?.bootstrap != null) Chrome.evaluateJavascript(listOf(prepared.bootstrap), prepared.tab)
+    Chrome.getTab()?.let { popupRoutes[id] = WeakReference(it) }
+    return managerEvent("extension_popup", ExtensionPopup.document(id))
+  }
+
+  private fun startInstalledBackground(result: JSONObject) {
+    val extension = result.optJSONObject("extension") ?: return
+    if (!extension.optBoolean("enabled", true)) return
+    val id = extension.optString("id")
+    if (id.isBlank()) return
+    val prepared = ExtensionBackgroundHost.prepare(id, ExtensionActiveTab.preferred()) ?: return
+    prepared.bootstrap?.let { Chrome.evaluateJavascript(listOf(it), prepared.tab) }
   }
 
   private fun permissionSnapshot(id: String): JSONObject? {
@@ -63,18 +107,44 @@ object ExtensionBridge {
     val data = JSONObject(payload)
     return when (data.optString("op")) {
       "list" -> managerEvent("extension_list", LocalFiles.managementList())
-      "popup" -> {
+      "popup" -> preparePopup(data.getString("id"))
+      "activate" -> {
         val id = data.getString("id")
-        val prepared = ExtensionBackgroundHost.prepare(id, Chrome.getTab())
-        if (prepared?.bootstrap != null)
-            Chrome.evaluateJavascript(listOf(prepared.bootstrap), prepared.tab)
-        managerEvent("extension_popup", ExtensionPopup.document(id))
+        val extension = extensionInfo(id)
+        if (extension == null || !extension.optBoolean("enabled")) {
+          managerEvent("extension_action", failure("Extension is disabled").put("id", id))
+        } else if (popupPath(extension).isNotBlank()) {
+          preparePopup(id)
+        } else {
+          val ok = ExtensionBackgroundHost.dispatchActionClick(id, ExtensionActiveTab.preferred())
+          managerEvent(
+              "extension_action",
+              JSONObject().put("ok", ok).put("id", id).put("type", "clicked"))
+        }
+      }
+      "runtimeStatus" -> {
+        val id = data.getString("id")
+        managerEvent(
+            "extension_runtime_status",
+            JSONObject()
+                .put("ok", true)
+                .put("id", id)
+                .put("backgroundAttached", ExtensionBackgroundHost.isAttached(id))
+                .put("activeTab", ExtensionActiveTab.snapshot()))
       }
       "setEnabled" -> {
         val id = data.getString("id")
         val enabled = data.getBoolean("enabled")
         val changed = LocalFiles.setEnabled(id, enabled)
-        if (changed && !enabled) ExtensionBackgroundHost.release(id)
+        if (changed && !enabled) {
+          ExtensionBackgroundHost.release(id)
+          popupRoutes.remove(id)
+          extensionPageRoutes.remove(id)
+        } else if (changed) {
+          val prepared = ExtensionBackgroundHost.prepare(id, ExtensionActiveTab.preferred())
+          if (prepared?.bootstrap != null)
+              Chrome.evaluateJavascript(listOf(prepared.bootstrap), prepared.tab)
+        }
         managerEvent(
             "extension_changed",
             JSONObject().put("ok", changed).put("type", "enabled").put("id", id))
@@ -83,13 +153,16 @@ object ExtensionBridge {
         val id = data.getString("id")
         ExtensionBackgroundHost.release(id)
         ExtensionDynamicScripts.clear(id)
+        popupRoutes.remove(id)
+        extensionPageRoutes.remove(id)
         val changed = LocalFiles.delete(id)
         managerEvent(
             "extension_changed",
             JSONObject().put("ok", changed).put("type", "delete").put("id", id))
       }
       "installStart" -> {
-        val result = LocalFiles.beginInstall(data.getString("token"), data.optString("name", "extension.zip"))
+        val result =
+            LocalFiles.beginInstall(data.getString("token"), data.optString("name", "extension.zip"))
         managerEvent("extension_install_started", taggedUploadResult(data, result))
       }
       "installChunk" -> {
@@ -98,6 +171,7 @@ object ExtensionBridge {
       }
       "installFinish" -> {
         val result = LocalFiles.finishInstall(data.getString("token"))
+        startInstalledBackground(result)
         managerEvent("extension_install", taggedUploadResult(data, result))
       }
       "installUrl" -> {
@@ -111,6 +185,7 @@ object ExtensionBridge {
           val targetTab = Chrome.getTab()
           Chrome.IO.submit {
             val result = RemoteExtensionInstaller.install(source).put("token", requestToken)
+            startInstalledBackground(result)
             Chrome.evaluateJavascript(listOf(managerEvent("extension_install", result)), targetTab)
           }
           managerEvent(
@@ -129,7 +204,9 @@ object ExtensionBridge {
         managerEvent("extension_install_progress", taggedUploadResult(data, result))
       }
       "folderFinish" -> {
-        val result = UnpackedExtensionInstaller.finish(data.getString("token"), data.optString("name"))
+        val result =
+            UnpackedExtensionInstaller.finish(data.getString("token"), data.optString("name"))
+        startInstalledBackground(result)
         managerEvent("extension_install", taggedUploadResult(data, result))
       }
       "permissions" ->
@@ -158,23 +235,32 @@ object ExtensionBridge {
     }
   }
 
-  private fun syntheticTabId(tab: Any?): String {
-    val resolved = Chrome.getTab(tab) ?: return ""
-    return "cx-${System.identityHashCode(resolved)}"
-  }
+  private fun syntheticTabId(tab: Any?): String = ExtensionActiveTab.idFor(tab)
 
-  private fun sender(extensionId: String, currentTab: Any?, frameId: String?): JSONObject {
-    val url = Chrome.getUrl(currentTab) ?: ""
-    return JSONObject()
-        .put("id", extensionId)
-        .put("url", url)
-        .put("frameId", frameId ?: JSONObject.NULL)
-        .put(
-            "tab",
-            JSONObject()
-                .put("id", syntheticTabId(currentTab))
-                .put("url", url)
-                .put("active", currentTab == Chrome.getTab()))
+  private fun sender(
+      extensionId: String,
+      currentTab: Any?,
+      frameId: String?,
+      context: JSONObject?,
+  ): JSONObject {
+    val type = context?.optString("type").orEmpty()
+    val url = context?.optString("url")?.takeIf { it.isNotBlank() } ?: Chrome.getUrl(currentTab) ?: ""
+    val result =
+        JSONObject()
+            .put("id", extensionId)
+            .put("url", url)
+            .put("frameId", frameId ?: JSONObject.NULL)
+    if (type == "content") {
+      val tab = Chrome.getTab(currentTab)
+      result.put(
+          "tab",
+          JSONObject()
+              .put("id", syntheticTabId(tab))
+              .put("url", Chrome.getUrl(tab) ?: url)
+              .put("active", true)
+              .put("windowId", 0))
+    }
+    return result
   }
 
   private fun eventCode(event: String, detail: JSONObject): String =
@@ -198,6 +284,9 @@ object ExtensionBridge {
 
   private fun deliverToTab(tabId: String, event: String, detail: JSONObject): Boolean {
     if (tabId.isBlank()) return false
+    val remembered = ExtensionActiveTab.resolve(tabId)
+    if (remembered != null) return deliverDirect(remembered, event, detail)
+    if (tabId.startsWith("cx-local-")) return false
     return runCatching {
           val client = DevSessions.new(tabId, "extension-message")
           client.evaluateJavascript(eventCode(event, detail))
@@ -213,6 +302,40 @@ object ExtensionBridge {
   private fun rememberRoute(messageId: String, currentTab: Any?, frameId: String?) {
     val tab = Chrome.getTab(currentTab) ?: return
     if (messageId.isNotBlank()) messageRoutes[messageId] = MessageRoute(WeakReference(tab), frameId)
+  }
+
+  private fun rememberExtensionPage(extensionId: String, currentTab: Any?, frameId: String?) {
+    val tab = Chrome.getTab(currentTab) ?: return
+    val routes = extensionPageRoutes.getOrPut(extensionId) { mutableListOf() }
+    synchronized(routes) {
+      routes.removeAll { it.tab.get() == null || !runCatching { Chrome.checkTab(it.tab.get()) }.getOrDefault(false) }
+      if (routes.none { it.tab.get() === tab && it.frameId == frameId }) {
+        routes.add(ContextRoute(WeakReference(tab), frameId))
+      }
+    }
+  }
+
+  private fun deliverToExtensionPages(extensionId: String, detail: JSONObject): Boolean {
+    var delivered = false
+    popupRoutes[extensionId]?.get()?.let { tab ->
+      delivered = deliverDirect(tab, "cx_extension_message", detail) || delivered
+    }
+    val routes = extensionPageRoutes[extensionId]
+    if (routes != null) {
+      synchronized(routes) {
+        val iterator = routes.iterator()
+        while (iterator.hasNext()) {
+          val route = iterator.next()
+          val tab = route.tab.get()
+          if (tab == null || !runCatching { Chrome.checkTab(tab) }.getOrDefault(false)) {
+            iterator.remove()
+            continue
+          }
+          delivered = deliverDirect(tab, "cx_extension_message", detail, route.frameId) || delivered
+        }
+      }
+    }
+    return delivered
   }
 
   private fun deliverMessageResponse(extensionId: String, messageId: String, value: Any?): Boolean {
@@ -233,7 +356,7 @@ object ExtensionBridge {
     val messageId = request.optString("messageId", request.optString("requestId"))
     if (api == "runtime.sendMessageResponse") {
       deliverMessageResponse(extensionId, messageId, args.opt(0))
-      return JSONObject().put("ok", true).put("value", JSONObject.NULL)
+      return success()
     }
 
     val isTabMessage = api == "tabs.sendMessage"
@@ -246,14 +369,16 @@ object ExtensionBridge {
             .put("target", if (isTabMessage) "content" else "extension")
             .put("senderContext", senderContext)
             .put("message", message ?: JSONObject.NULL)
-            .put("sender", sender(extensionId, currentTab, frameId))
+            .put("sender", sender(extensionId, currentTab, frameId, senderContext))
 
     rememberRoute(messageId, currentTab, frameId)
     val delivered =
         if (isTabMessage) {
           deliverToTab(args.optString(0), "cx_extension_message", detail)
+        } else if (senderContext.optString("type") == "background") {
+          deliverToExtensionPages(extensionId, detail)
         } else {
-          val prepared = ExtensionBackgroundHost.prepare(extensionId, currentTab)
+          val prepared = ExtensionBackgroundHost.prepare(extensionId, ExtensionActiveTab.preferred(currentTab))
           if (prepared != null) {
             deliverDirect(
                 prepared.tab,
@@ -261,15 +386,34 @@ object ExtensionBridge {
                 detail,
                 bootstrap = prepared.bootstrap)
           } else {
-            deliverDirect(currentTab, "cx_extension_message", detail, frameId)
+            false
           }
         }
 
     if (!delivered) {
       messageRoutes.remove(messageId)
-      return JSONObject().put("ok", false).put("error", "Extension message target is not available")
+      return failure("Extension message target is not available")
     }
-    return JSONObject().put("ok", true).put("value", JSONObject.NULL)
+    return success()
+  }
+
+  private fun activeTabMatches(query: JSONObject?): Boolean {
+    if (query == null) return true
+    if (query.has("active") && !query.optBoolean("active")) return false
+    if (query.has("highlighted") && !query.optBoolean("highlighted")) return false
+    if (query.optBoolean("pinned", false) || query.optBoolean("incognito", false)) return false
+    return true
+  }
+
+  private fun openUrl(url: String, currentTab: Any?, newTab: Boolean): JSONObject {
+    val resolved = ExtensionUrl.resolve(url) ?: url
+    val target = ExtensionActiveTab.preferred(currentTab) ?: Chrome.getTab(currentTab)
+        ?: return failure("No browser tab is available")
+    val expression =
+        if (newTab) "window.open(${JSONObject.quote(resolved)},'_blank')"
+        else "location.href=${JSONObject.quote(resolved)}"
+    Chrome.evaluateJavascript(listOf(expression), target)
+    return success(JSONObject().put("id", ExtensionActiveTab.idFor(target)).put("url", resolved).put("active", true).put("windowId", 0))
   }
 
   private fun compatibilityApi(
@@ -287,10 +431,56 @@ object ExtensionBridge {
           ExtensionDynamicScripts.unregister(extensionId, args.optJSONObject(0))
       "scripting.getRegisteredContentScripts" ->
           ExtensionDynamicScripts.get(extensionId, args.optJSONObject(0))
+      "scripting.executeScript" ->
+          ExtensionScriptingCompat.executeScript(extensionId, args.optJSONObject(0), currentTab)
       "scripting.insertCSS" ->
           ExtensionScriptingCompat.insertCss(extensionId, args.optJSONObject(0), currentTab)
       "scripting.removeCSS" ->
           ExtensionScriptingCompat.removeCss(extensionId, args.optJSONObject(0), currentTab)
+      "tabs.query" -> {
+        val array = JSONArray()
+        if (activeTabMatches(args.optJSONObject(0))) array.put(ExtensionActiveTab.snapshot(currentTab))
+        success(array)
+      }
+      "tabs.getCurrent" -> success(ExtensionActiveTab.snapshot(currentTab))
+      "tabs.get" -> {
+        val id = args.optString(0)
+        val tab = ExtensionActiveTab.snapshot(currentTab)
+        if (id == tab.optString("id")) success(tab) else success(JSONObject.NULL)
+      }
+      "tabs.create" -> openUrl(args.optJSONObject(0)?.optString("url", "about:blank") ?: "about:blank", currentTab, true)
+      "tabs.update" -> {
+        val firstObject = args.optJSONObject(0)
+        val props = firstObject ?: args.optJSONObject(1) ?: JSONObject()
+        val id = if (firstObject == null) args.optString(0) else ""
+        val target = if (id.isBlank()) ExtensionActiveTab.preferred(currentTab) else ExtensionActiveTab.resolve(id)
+        if (target == null) failure("Target tab is not available")
+        else if (props.has("url")) openUrl(props.optString("url"), target, false)
+        else success(ExtensionActiveTab.snapshot(target))
+      }
+      "tabs.reload" -> {
+        val id = args.optString(0)
+        val target = if (id.isBlank()) ExtensionActiveTab.preferred(currentTab) else ExtensionActiveTab.resolve(id)
+        if (target == null) failure("Target tab is not available")
+        else {
+          Chrome.evaluateJavascript(listOf("location.reload()"), target)
+          success()
+        }
+      }
+      "tabs.remove" -> {
+        val id = args.optString(0)
+        val target = if (id.isBlank()) ExtensionActiveTab.preferred(currentTab) else ExtensionActiveTab.resolve(id)
+        if (target == null) failure("Target tab is not available")
+        else {
+          Chrome.evaluateJavascript(listOf("window.close()"), target)
+          success()
+        }
+      }
+      "runtime.openOptionsPage" -> {
+        val options = extensionInfo(extensionId)?.optString("optionsUrl").orEmpty()
+        if (options.isBlank()) failure("Extension does not declare an options page")
+        else openUrl(options, currentTab, true)
+      }
       "notifications.clear" -> ExtensionNativeCompat.clearNotification(args.optString(0))
       "cookies.getAll" -> ExtensionNativeCompat.getAllCookies(args.optJSONObject(0))
       "cookies.set" -> ExtensionNativeCompat.setCookie(args.optJSONObject(0))
@@ -306,24 +496,21 @@ object ExtensionBridge {
     val context = request.optJSONObject("context")
     val contextType = context?.optString("type")
     val isPrivilegedContext = contextType == "background" || contextType == "extension_page"
-    val url = Chrome.getUrl(currentTab)
+    if (contextType == "extension_page" && extensionId.isNotBlank()) {
+      rememberExtensionPage(extensionId, currentTab, frameId)
+    }
+    val url = context?.optString("url")?.takeIf { it.isNotBlank() } ?: Chrome.getUrl(currentTab)
     val api = request.optString("api")
     val permissions = requiredPermissions(api)
     val result =
         if (extensionId.isBlank() || requestId.isBlank()) {
-          JSONObject().put("ok", false).put("error", "Invalid extension request")
+          failure("Invalid extension request")
         } else if (!isPrivilegedContext && !LocalFiles.allowedOnUrl(extensionId, url)) {
-          JSONObject().put("ok", false).put("error", "Extension has no access to this page")
+          failure("Extension has no access to this page")
         } else if (api == "permissions.request") {
-          JSONObject()
-              .put("ok", false)
-              .put("error", "Optional permissions must be granted from the ChromeXt manager")
+          failure("Optional permissions must be granted from the ChromeXt manager")
         } else if (permissions != null && !hasAnyPermission(extensionId, permissions)) {
-          JSONObject()
-              .put("ok", false)
-              .put(
-                  "error",
-                  "Missing WebExtension permission: ${permissions.joinToString(" or ")}")
+          failure("Missing WebExtension permission: ${permissions.joinToString(" or ")}")
         } else if (
             api == "runtime.sendMessage" ||
                 api == "tabs.sendMessage" ||
