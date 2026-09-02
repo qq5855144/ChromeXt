@@ -172,11 +172,10 @@
     if (modal) modal.hidden = true;
   };
 
-  const openPopup = (id) => {
+  const activateExtension = (id) => {
     const extension = extensions.find((item) => item.id === id);
     if (!extension?.enabled) return showToast("请先启用该扩展", true);
-    if (!popupPath(extension)) return showToast("该扩展没有菜单面板", true);
-    extensionDispatch({ op: "popup", id });
+    extensionDispatch({ op: "activate", id });
   };
 
   const decorateCards = () => {
@@ -191,9 +190,12 @@
         const button = document.createElement("button");
         button.className = "cx-extension-toolbar-icon";
         button.type = "button";
-        button.dataset.action = "extension-popup-icon";
-        button.disabled = !extension.enabled || !hasPopup;
-        button.setAttribute("aria-label", hasPopup ? `打开 ${extension.name || "扩展"} 菜单` : "该扩展没有菜单面板");
+        button.dataset.action = "extension-action-icon";
+        button.disabled = !extension.enabled;
+        button.setAttribute(
+          "aria-label",
+          hasPopup ? `打开 ${extension.name || "扩展"} 菜单` : `触发 ${extension.name || "扩展"}`
+        );
         const icon = extensionIcon(extension);
         if (icon) {
           const image = document.createElement("img");
@@ -286,11 +288,11 @@
       (event) => {
         const card = event.target.closest?.(".cx-card[data-kind='extension']");
         if (!card) return;
-        const trigger = event.target.closest?.("[data-action='popup'],[data-action='extension-popup-icon']");
-        if (!trigger || card.dataset.hasPopup !== "true") return;
+        const trigger = event.target.closest?.("[data-action='popup'],[data-action='extension-action-icon']");
+        if (!trigger) return;
         event.preventDefault();
         event.stopImmediatePropagation();
-        openPopup(card.dataset.id);
+        activateExtension(card.dataset.id);
       },
       true
     );
@@ -305,6 +307,10 @@
       setTimeout(decorateCards, 0);
     });
     api.addEventListener("extension_popup", (event) => renderPopup(event.detail || {}));
+    api.addEventListener("extension_action", (event) => {
+      if (event.detail?.ok === false)
+        showToast(`扩展操作失败：${event.detail?.error || "未知错误"}`, true);
+    });
     FORWARDED_EVENTS.forEach((name) =>
       api.addEventListener(name, (event) => forwardEvent(name, event.detail))
     );
