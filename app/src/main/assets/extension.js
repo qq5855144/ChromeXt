@@ -1,42 +1,38 @@
 "use strict";
 
-/**
- * ChromeXt WebExtension compatibility runtime.
- *
- * This file is embedded into every extension execution context by LocalFiles.kt. It deliberately
- * implements the WebExtension surface in JavaScript and forwards privileged operations to the
- * ChromeXt native bridge, so it does not depend on the host browser shipping Chromium's extension
- * subsystem.
- */
+/** Browser-independent WebExtension compatibility runtime. */
 const __cxCreateExtensionApi = (manifest, context, native) => {
   const extensionId = manifest.id;
   let sequence = 0;
   const pending = new Map();
+  const messagePending = new Map();
 
   class ChromeEvent {
-    #listeners = new Set();
+    constructor() {
+      this.listeners = new Set();
+    }
     addListener(listener) {
-      if (typeof listener === "function") this.#listeners.add(listener);
+      if (typeof listener === "function") this.listeners.add(listener);
     }
     removeListener(listener) {
-      this.#listeners.delete(listener);
+      this.listeners.delete(listener);
     }
     hasListener(listener) {
-      return this.#listeners.has(listener);
+      return this.listeners.has(listener);
     }
     hasListeners() {
-      return this.#listeners.size > 0;
+      return this.listeners.size > 0;
     }
     dispatch(...args) {
       let result;
-      for (const listener of [...this.#listeners]) {
+      [...this.listeners].forEach((listener) => {
         try {
           const value = listener(...args);
           if (value !== undefined) result = value;
         } catch (error) {
           console.error(`[ChromeXt Extension ${extensionId}] event listener failed`, error);
         }
-      }
+      });
       return result;
     }
   }
@@ -58,19 +54,18 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
   const clone = (value) => {
     if (value === undefined) return null;
     try {
-      return structuredClone(value);
+      if (typeof structuredClone === "function") return structuredClone(value);
+    } catch {}
+    try {
+      return JSON.parse(JSON.stringify(value));
     } catch {
-      try {
-        return JSON.parse(JSON.stringify(value));
-      } catch {
-        return null;
-      }
+      return null;
     }
   };
 
   const invokeCallback = (callback, error, value) => {
     if (typeof callback !== "function") return;
-    if (error) runtime.lastError = { message: String(error) };
+    if (error) runtime.lastError = { message: String(error.message || error) };
     try {
       callback(value);
     } finally {
@@ -78,18 +73,43 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
     }
   };
 
+  const nextId = (kind = "request") => `${extensionId}:${context.type}:${kind}:${Date.now()}:${++sequence}`;
+
   const request = (api, rawArgs = []) => {
     const args = [...rawArgs];
-    const callback = typeof args.at(-1) === "function" ? args.pop() : null;
-    const requestId = `${extensionId}:${context.type}:${Date.now()}:${++sequence}`;
-    const promise = new Promise((resolve, reject) => {
+    const last = args.length ? args[args.length - 1] : null;
+    const callback = typeof last === "function" ? args.pop() : null;
+    const requestId = nextId();
+    return new Promise((resolve, reject) => {
       pending.set(requestId, { resolve, reject, callback });
+      native.dispatch(
+        "extensionApi",
+        JSON.stringify({ extensionId, requestId, api, args: clone(args), context })
+      );
+    });
+  };
+
+  const sendMessage = (apiName, rawArgs) => {
+    const args = [...rawArgs];
+    const last = args.length ? args[args.length - 1] : null;
+    const callback = typeof last === "function" ? args.pop() : null;
+    const requestId = nextId("message-ack");
+    const messageId = nextId("message");
+    const promise = new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (!messagePending.has(messageId)) return;
+        messagePending.delete(messageId);
+        invokeCallback(callback, null, undefined);
+        resolve(undefined);
+      }, 5000);
+      messagePending.set(messageId, { resolve, callback, timer });
       native.dispatch(
         "extensionApi",
         JSON.stringify({
           extensionId,
           requestId,
-          api,
+          messageId,
+          api: apiName,
           args: clone(args),
           context,
         })
@@ -114,16 +134,42 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
     }
   });
 
+  native.addEventListener("cx_extension_message_response", (event) => {
+    const detail = event.detail || {};
+    if (detail.extensionId !== extensionId) return;
+    const task = messagePending.get(detail.messageId);
+    if (!task) return;
+    messagePending.delete(detail.messageId);
+    clearTimeout(task.timer);
+    invokeCallback(task.callback, null, detail.value);
+    task.resolve(detail.value);
+  });
+
   native.addEventListener("cx_extension_message", (event) => {
     const detail = event.detail || {};
     if (detail.extensionId !== extensionId) return;
     let responded = false;
-    const sendResponse = () => {
+    const sendResponse = (value) => {
+      if (responded || !detail.messageId) return;
       responded = true;
+      native.dispatch(
+        "extensionApi",
+        JSON.stringify({
+          extensionId,
+          requestId: nextId("response-ack"),
+          messageId: detail.messageId,
+          api: "runtime.sendMessageResponse",
+          args: [clone(value)],
+          context,
+        })
+      );
     };
     const result = runtime.onMessage.dispatch(detail.message, detail.sender || {}, sendResponse);
-    if (result && typeof result.then === "function") result.catch(console.error);
-    return responded;
+    if (result && typeof result.then === "function") {
+      result.then(sendResponse).catch((error) => console.error(error));
+    } else if (result !== undefined && result !== true) {
+      sendResponse(result);
+    }
   });
 
   native.addEventListener("cx_extension_storage", (event) => {
@@ -138,29 +184,28 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
   };
 
   const normalizeExecuteScript = (args) => {
-    const details = { ...(args[0] || {}) };
+    const details = Object.assign({}, args[0] || {});
     if (typeof details.func === "function") details.func = details.func.toString();
     details.args = clone(details.args || []);
-    return [details, ...args.slice(1)];
+    return [details].concat(args.slice(1));
   };
 
-  const getURL = (path = "") => {
-    const root = manifest.baseUrl || "";
-    return root + String(path).replace(/^\//, "");
-  };
+  const getURL = (path = "") => (manifest.baseUrl || "") + String(path).replace(/^\//, "");
 
   const getMessage = (name, substitutions) => {
-    const entry = manifest.__messages?.[name];
+    const entry = manifest.__messages && manifest.__messages[name];
     if (!entry) return "";
     let message = typeof entry === "string" ? entry : entry.message || "";
     const values = Array.isArray(substitutions) ? substitutions : substitutions == null ? [] : [substitutions];
     values.forEach((value, index) => {
-      message = message.replaceAll(`$${index + 1}`, String(value));
+      message = message.split(`$${index + 1}`).join(String(value));
     });
     return message.replace(/\$\$/g, "$");
   };
 
   const localCommands = Array.isArray(manifest.__commands) ? manifest.__commands : [];
+  const alarms = new Map();
+  const alarmEvent = new ChromeEvent();
 
   const chrome = {
     runtime: Object.assign(runtime, {
@@ -168,7 +213,7 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
       getManifest: () => clone(manifest),
       getURL,
       getPlatformInfo: apiMethod("runtime.getPlatformInfo"),
-      sendMessage: apiMethod("runtime.sendMessage"),
+      sendMessage: (...args) => sendMessage("runtime.sendMessage", args),
       openOptionsPage: () => {
         if (manifest.optionsUrl) window.open(manifest.optionsUrl, "_blank");
         return Promise.resolve();
@@ -181,16 +226,14 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
           sender: { id: extensionId, url: context.url },
           onMessage,
           onDisconnect,
-          postMessage: (message) => request("runtime.sendMessage", [message]),
+          postMessage: (message) => sendMessage("runtime.sendMessage", [message]).then((value) => onMessage.dispatch(value)),
           disconnect: () => onDisconnect.dispatch(port),
         };
-        queueMicrotask(() => runtime.onConnect.dispatch(port));
+        setTimeout(() => runtime.onConnect.dispatch(port), 0);
         return port;
       },
     }),
-    storage: {
-      onChanged: storageChanged,
-    },
+    storage: { onChanged: storageChanged },
     tabs: {
       onActivated: new ChromeEvent(),
       onCreated: new ChromeEvent(),
@@ -202,23 +245,9 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
       update: apiMethod("tabs.update"),
       remove: apiMethod("tabs.remove"),
       reload: apiMethod("tabs.reload"),
-      sendMessage: apiMethod("tabs.sendMessage"),
-      executeScript: (tabId, details, callback) =>
-        request("scripting.executeScript", [
-          {
-            target: { tabId },
-            code: details?.code,
-          },
-          callback,
-        ]),
-      insertCSS: (tabId, details, callback) =>
-        request("scripting.insertCSS", [
-          {
-            target: { tabId },
-            css: details?.code,
-          },
-          callback,
-        ]),
+      sendMessage: (...args) => sendMessage("tabs.sendMessage", args),
+      executeScript: (tabId, details, callback) => request("scripting.executeScript", [{ target: { tabId }, code: details && details.code }, callback]),
+      insertCSS: (tabId, details, callback) => request("scripting.insertCSS", [{ target: { tabId }, css: details && details.code }, callback]),
     },
     scripting: {
       executeScript: apiMethod("scripting.executeScript", normalizeExecuteScript),
@@ -297,32 +326,40 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
         return Promise.resolve();
       },
     },
+    alarms: {
+      onAlarm: alarmEvent,
+      create: (name, info) => {
+        if (typeof name === "object") { info = name; name = ""; }
+        name = name || "";
+        info = info || {};
+        const delay = Math.max(0, Number(info.delayInMinutes || 0) * 60000 || Number(info.when || Date.now()) - Date.now());
+        const period = Number(info.periodInMinutes || 0) * 60000;
+        const fire = () => alarmEvent.dispatch({ name, scheduledTime: Date.now(), periodInMinutes: period ? period / 60000 : undefined });
+        const timer = period ? setInterval(fire, Math.max(period, 60000)) : setTimeout(fire, delay);
+        alarms.set(name, { name, scheduledTime: Date.now() + delay, periodInMinutes: period ? period / 60000 : undefined, timer, period: !!period });
+      },
+      get: (name, callback) => { const alarm = alarms.get(name); const value = alarm ? { name: alarm.name, scheduledTime: alarm.scheduledTime, periodInMinutes: alarm.periodInMinutes } : undefined; if (callback) callback(value); return Promise.resolve(value); },
+      getAll: (callback) => { const value = [...alarms.values()].map(({ name, scheduledTime, periodInMinutes }) => ({ name, scheduledTime, periodInMinutes })); if (callback) callback(value); return Promise.resolve(value); },
+      clear: (name, callback) => { const alarm = alarms.get(name); if (alarm) { alarm.period ? clearInterval(alarm.timer) : clearTimeout(alarm.timer); alarms.delete(name); } const value = !!alarm; if (callback) callback(value); return Promise.resolve(value); },
+      clearAll: (callback) => { [...alarms.keys()].forEach((name) => chrome.alarms.clear(name)); if (callback) callback(true); return Promise.resolve(true); },
+    },
+    management: {
+      getSelf: (callback) => { const value = { id: extensionId, name: manifest.name, version: manifest.version, enabled: true, type: "extension" }; if (callback) callback(value); return Promise.resolve(value); },
+      getAll: (callback) => { const value = [{ id: extensionId, name: manifest.name, version: manifest.version, enabled: true, type: "extension" }]; if (callback) callback(value); return Promise.resolve(value); },
+    },
+    windows: {
+      WINDOW_ID_CURRENT: -2,
+      getCurrent: (callback) => { const value = { id: 0, focused: true, incognito: false }; if (callback) callback(value); return Promise.resolve(value); },
+    },
     contextMenus: (() => {
       const items = new Map();
       const onClicked = new ChromeEvent();
       return {
         onClicked,
-        create: (props, callback) => {
-          const id = props?.id ?? `cx-menu-${items.size + 1}`;
-          items.set(id, { ...props, id });
-          if (callback) callback();
-          return id;
-        },
-        update: (id, props, callback) => {
-          if (items.has(id)) items.set(id, { ...items.get(id), ...props });
-          if (callback) callback();
-          return Promise.resolve();
-        },
-        remove: (id, callback) => {
-          items.delete(id);
-          if (callback) callback();
-          return Promise.resolve();
-        },
-        removeAll: (callback) => {
-          items.clear();
-          if (callback) callback();
-          return Promise.resolve();
-        },
+        create: (props, callback) => { const id = props && props.id != null ? props.id : `cx-menu-${items.size + 1}`; items.set(id, Object.assign({}, props, { id })); if (callback) callback(); return id; },
+        update: (id, props, callback) => { if (items.has(id)) items.set(id, Object.assign({}, items.get(id), props)); if (callback) callback(); return Promise.resolve(); },
+        remove: (id, callback) => { items.delete(id); if (callback) callback(); return Promise.resolve(); },
+        removeAll: (callback) => { items.clear(); if (callback) callback(); return Promise.resolve(); },
       };
     })(),
   };
@@ -333,13 +370,10 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
     getURL,
     getBackgroundPage: () => context.type === "background" ? window : null,
     getViews: () => [window],
-    isAllowedIncognitoAccess: (callback) => {
-      if (callback) callback(false);
-      return Promise.resolve(false);
-    },
+    isAllowedIncognitoAccess: (callback) => { if (callback) callback(false); return Promise.resolve(false); },
   };
 
-  for (const areaName of ["local", "sync", "session"]) {
+  ["local", "sync", "session"].forEach((areaName) => {
     chrome.storage[areaName] = {
       get: apiMethod(`storage.${areaName}.get`),
       set: apiMethod(`storage.${areaName}.set`),
@@ -351,31 +385,19 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
       },
       QUOTA_BYTES: 10 * 1024 * 1024,
     };
-  }
+  });
 
   if (context.type === "background") {
-    queueMicrotask(() => {
+    setTimeout(() => {
       runtime.onStartup.dispatch();
       runtime.onInstalled.dispatch({ reason: "browser_update", temporary: false });
-    });
+    }, 0);
   }
 
   if (context.type === "content") {
-    queueMicrotask(() => webNavigationCommitted.dispatch({
-      frameId: context.frameId || 0,
-      parentFrameId: context.frameId ? 0 : -1,
-      tabId: -1,
-      timeStamp: Date.now(),
-      url: context.url,
-    }));
-    const completed = () => webNavigationCompleted.dispatch({
-      frameId: context.frameId || 0,
-      parentFrameId: context.frameId ? 0 : -1,
-      tabId: -1,
-      timeStamp: Date.now(),
-      url: context.url,
-    });
-    if (document.readyState === "complete") queueMicrotask(completed);
+    setTimeout(() => webNavigationCommitted.dispatch({ frameId: context.frameId || 0, parentFrameId: context.frameId ? 0 : -1, tabId: -1, timeStamp: Date.now(), url: context.url }), 0);
+    const completed = () => webNavigationCompleted.dispatch({ frameId: context.frameId || 0, parentFrameId: context.frameId ? 0 : -1, tabId: -1, timeStamp: Date.now(), url: context.url });
+    if (document.readyState === "complete") setTimeout(completed, 0);
     else window.addEventListener("load", completed, { once: true });
   }
 
