@@ -63,6 +63,11 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
     }
   };
 
+  const runtimeManifest = clone(manifest) || {};
+  ["id", "enabled", "port", "baseUrl", "popupUrl", "optionsUrl", "__messages", "__commands"].forEach(
+    (key) => delete runtimeManifest[key]
+  );
+
   const invokeCallback = (callback, error, value) => {
     if (typeof callback !== "function") return;
     if (error) runtime.lastError = { message: String(error.message || error) };
@@ -95,7 +100,7 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
     const callback = typeof last === "function" ? args.pop() : null;
     const requestId = nextId("message-ack");
     const messageId = nextId("message");
-    const promise = new Promise((resolve) => {
+    return new Promise((resolve) => {
       const timer = setTimeout(() => {
         if (!messagePending.has(messageId)) return;
         messagePending.delete(messageId);
@@ -115,7 +120,6 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
         })
       );
     });
-    return promise;
   };
 
   native.addEventListener("cx_extension_response", (event) => {
@@ -192,25 +196,63 @@ const __cxCreateExtensionApi = (manifest, context, native) => {
 
   const getURL = (path = "") => (manifest.baseUrl || "") + String(path).replace(/^\//, "");
 
+  const localeCandidates = [];
+  const addLocale = (locale) => {
+    if (!locale) return;
+    const normalized = String(locale).replace("-", "_");
+    if (!localeCandidates.includes(normalized)) localeCandidates.push(normalized);
+    const short = normalized.split("_")[0];
+    if (short && !localeCandidates.includes(short)) localeCandidates.push(short);
+  };
+  addLocale(navigator.language);
+  (navigator.languages || []).forEach(addLocale);
+  addLocale(manifest.default_locale);
+
+  let localeMessages = null;
+  const loadLocaleMessages = () => {
+    if (localeMessages) return localeMessages;
+    localeMessages = {};
+    for (const locale of localeCandidates) {
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", getURL(`_locales/${locale}/messages.json`), false);
+        xhr.send(null);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          localeMessages = JSON.parse(xhr.responseText || "{}");
+          break;
+        }
+      } catch {}
+    }
+    return localeMessages;
+  };
+
   const getMessage = (name, substitutions) => {
-    const entry = manifest.__messages && manifest.__messages[name];
+    const entry = loadLocaleMessages()[name];
     if (!entry) return "";
     let message = typeof entry === "string" ? entry : entry.message || "";
     const values = Array.isArray(substitutions) ? substitutions : substitutions == null ? [] : [substitutions];
     values.forEach((value, index) => {
       message = message.split(`$${index + 1}`).join(String(value));
     });
+    if (entry.placeholders && typeof entry.placeholders === "object") {
+      Object.keys(entry.placeholders).forEach((placeholder) => {
+        const content = entry.placeholders[placeholder]?.content || "";
+        message = message.replace(new RegExp(`\\$${placeholder}\\$`, "gi"), content);
+      });
+    }
     return message.replace(/\$\$/g, "$");
   };
 
-  const localCommands = Array.isArray(manifest.__commands) ? manifest.__commands : [];
+  const localCommands = Object.entries(manifest.commands || {}).map(([name, info]) =>
+    Object.assign({ name }, info || {})
+  );
   const alarms = new Map();
   const alarmEvent = new ChromeEvent();
 
   const chrome = {
     runtime: Object.assign(runtime, {
       id: extensionId,
-      getManifest: () => clone(manifest),
+      getManifest: () => clone(runtimeManifest),
       getURL,
       getPlatformInfo: apiMethod("runtime.getPlatformInfo"),
       sendMessage: (...args) => sendMessage("runtime.sendMessage", args),
