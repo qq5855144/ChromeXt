@@ -207,7 +207,7 @@ object ScriptDbManager {
       val generated = LocalFiles.bootstrap(url, frameId).filterNot { it.contains("/background") }
       codes.addAll(ExtensionRunAt.schedule(generated, url, frameId))
       codes.addAll(ExtensionDynamicScripts.bootstrap(url, frameId))
-      if (frameId == null) codes.addAll(ExtensionBackgroundHost.bootstrap(url))
+      if (frameId == null) codes.addAll(ExtensionBackgroundHost.bootstrap(url, webView))
       if (
           frameId == null &&
               (LocalFiles.hasAllFrames(url) || ExtensionDynamicScripts.hasAllFrames(url))) {
