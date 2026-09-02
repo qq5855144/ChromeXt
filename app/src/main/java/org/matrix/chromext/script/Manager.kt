@@ -9,6 +9,8 @@ import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.extension.ExtensionActiveTab
+import org.matrix.chromext.extension.ExtensionBackgroundHost
 import org.matrix.chromext.extension.ExtensionDynamicScripts
 import org.matrix.chromext.extension.ExtensionPages
 import org.matrix.chromext.extension.ExtensionRunAt
@@ -135,6 +137,10 @@ object ScriptDbManager {
     val path = resolveContentUrl(url)
     val webSettings = webView?.invokeMethod { name == "getSettings" }
 
+    if (frameId == null && (url.startsWith("http://") || url.startsWith("https://"))) {
+      ExtensionActiveTab.remember(webView, url)
+    }
+
     var trustedPage = true
     var runScripts = false
     var bypassSandbox = false
@@ -197,6 +203,11 @@ object ScriptDbManager {
     codes.clear()
     if (asyncEvaluation) codes.add(initScript)
     if (runScripts) {
+      // Start enabled background/service-worker bundles only after ChromeXt's page bridge has been
+      // initialized. This path uses the already-known browser tab object and never performs
+      // getInspectPages/wakeUpDevTools discovery.
+      if (frameId == null) codes.addAll(ExtensionBackgroundHost.prepareAll(webView))
+
       scripts
           .filter { it.enabled && matching(it, url) && !(frameId != null && it.noframes) }
           .forEach {
@@ -204,9 +215,6 @@ object ScriptDbManager {
             GM.bootstrap(it, codes)
           }
 
-      // Extension content scripts remain page-scoped and only run when their match patterns apply.
-      // Do not start extension background/service-worker compatibility hosts from normal page
-      // navigation: the old path synchronously probed DevTools and could block the browser UI.
       val generated = LocalFiles.bootstrap(url, frameId).filterNot { it.contains("/background") }
       codes.addAll(ExtensionRunAt.schedule(generated, url, frameId))
       codes.addAll(ExtensionDynamicScripts.bootstrap(url, frameId))
@@ -232,7 +240,7 @@ object ScriptDbManager {
         if (db.update("script", values, "id = ?", arrayOf(it.id)).toString() == "-1") {
           Log.e("Updating scriptStorage failed for: " + it.id)
         } else {
-          Log.d("ScriptStorage updated for " + it.id)
+          Log.d("ScriptStorage updated for: " + it.id)
         }
       }
     }
