@@ -28,6 +28,10 @@ const remoteInstaller = fs.readFileSync(
   "app/src/main/java/org/matrix/chromext/extension/RemoteExtensionInstaller.kt",
   "utf8"
 );
+const localFiles = fs.readFileSync(
+  "app/src/main/java/org/matrix/chromext/extension/LocalFiles.kt",
+  "utf8"
+);
 const local = fs.readFileSync(
   "app/src/main/java/org/matrix/chromext/script/Local.kt",
   "utf8"
@@ -91,6 +95,20 @@ assert.ok(
     remoteInstaller.includes("MAX_PACKAGE_BYTES") &&
     remoteInstaller.includes("instanceFollowRedirects = false"),
   "direct installer must support Chrome Web Store downloads with bounded redirects and size"
+);
+assert.ok(
+  localFiles.includes("MIN_UNPACKED_BYTES = 256 * 1024 * 1024L") &&
+    localFiles.includes("MAX_UNPACKED_BYTES = 512 * 1024 * 1024L") &&
+    localFiles.includes("MAX_UNPACK_RATIO = 20L") &&
+    localFiles.includes("MAX_SINGLE_FILE_BYTES = 256 * 1024 * 1024L") &&
+    localFiles.includes("coerceAtLeast(MIN_UNPACKED_BYTES)") &&
+    localFiles.includes("coerceAtMost(MAX_UNPACKED_BYTES)"),
+  "extension unpacking must use adaptive limits instead of the old fixed 96 MB cap"
+);
+assert.equal(
+  localFiles.includes("Extension expands beyond 96 MB"),
+  false,
+  "the obsolete 96 MB unpack failure must not remain"
 );
 assert.ok(
   local.includes('ctx.assets.open("extension_install_fix.js")'),
