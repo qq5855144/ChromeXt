@@ -12,6 +12,7 @@
   if (!api?.runtime?.id) return;
 
   const extensionId = api.runtime.id;
+  const runtimeContext = typeof __cxContext !== "undefined" && __cxContext ? __cxContext : {};
   const roots = globalThis.__cxExtensionCompatState || (globalThis.__cxExtensionCompatState = {});
   const state = roots[extensionId] || (roots[extensionId] = {
     dynamicRules: new Map(),
@@ -254,16 +255,48 @@
   }
 
   if (api.tabs) {
+    const safeTab = {
+      id: `cx-${extensionId.slice(0, 8)}`,
+      url: String(runtimeContext.activeUrl || runtimeContext.url || "about:blank"),
+      title: "",
+      active: true,
+      highlighted: true,
+      selected: true,
+      pinned: false,
+      incognito: false,
+      windowId: 0,
+      index: 0,
+      status: "complete",
+    };
+    const matchesQuery = (query = {}) => {
+      if (query.active === false || query.highlighted === false) return false;
+      if (query.pinned === true || query.incognito === true) return false;
+      if (query.windowId != null && Number(query.windowId) !== 0) return false;
+      const urls = query.url == null ? [] : Array.isArray(query.url) ? query.url : [query.url];
+      if (!urls.length) return true;
+      return urls.some((pattern) => {
+        const source = String(pattern)
+          .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+          .replace(/\*/g, ".*");
+        try {
+          return new RegExp(`^${source}$`, "i").test(safeTab.url);
+        } catch (_) {
+          return false;
+        }
+      });
+    };
+
+    // Do not synchronously enumerate DevTools pages merely because a popup/background asks for
+    // the active tab. Browser variants can block their UI thread while DevTools is being woken.
+    api.tabs.query = (query, callback) => result(matchesQuery(query) ? [safeTab] : [], callback);
+    api.tabs.getCurrent = (callback) => result(safeTab, callback);
+    api.tabs.get = (tabId, callback) =>
+      result(String(tabId) === String(safeTab.id) ? safeTab : undefined, callback);
+
     api.tabs.onHighlighted ||= makeEvent();
     api.tabs.onReplaced ||= makeEvent();
     api.tabs.onDetached ||= makeEvent();
     api.tabs.onAttached ||= makeEvent();
-    api.tabs.get ||= (tabId, callback) =>
-      Promise.resolve(api.tabs.query({})).then((tabs) => {
-        const value = (tabs || []).find((tab) => String(tab.id) === String(tabId));
-        if (typeof callback === "function") callback(value);
-        return value;
-      });
     api.tabs.getZoom ||= (tabId, callback) => result(1, callback);
     api.tabs.setZoom ||= (tabId, factor, callback) => result(undefined, callback);
     api.tabs.detectLanguage ||= (tabId, callback) => result(navigator.language || "en", callback);
