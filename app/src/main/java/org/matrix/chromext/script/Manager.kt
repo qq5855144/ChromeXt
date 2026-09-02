@@ -203,7 +203,11 @@ object ScriptDbManager {
                 ?.toDoubleOrNull()
                 ?.coerceIn(0.08, 0.92)
                 ?: 0.5
-        codes.add(Local.scriptDock.replace("ChromeXtDockInitialY", dockY.toString()))
+        val dockCode = Local.scriptDock.replace("ChromeXtDockInitialY", dockY.toString())
+        codes.add(
+            "(()=>{const bootChromeXtScriptDock=()=>{\n${dockCode}\n};" +
+                "if(document.documentElement){bootChromeXtScriptDock();}" +
+                "else{document.addEventListener('DOMContentLoaded',bootChromeXtScriptDock,{once:true});}})();")
       }
       if (!asyncEvaluation) Chrome.evaluateJavascript(codes, webView, frameId)
     }
