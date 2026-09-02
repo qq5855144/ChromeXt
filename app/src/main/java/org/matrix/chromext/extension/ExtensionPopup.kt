@@ -66,11 +66,13 @@ object ExtensionPopup {
           val popupUrl = server.baseUrl + popupPath
           val directoryUrl = popupUrl.substringBeforeLast('/', server.baseUrl) + "/"
           val token = UUID.randomUUID().toString()
+          val activeTab = ExtensionActiveTab.snapshot()
           val context =
               JSONObject()
                   .put("type", "extension_page")
                   .put("url", popupUrl)
-                  .put("activeUrl", Chrome.getUrl(Chrome.getTab()) ?: "about:blank")
+                  .put("activeUrl", activeTab.optString("url", "about:blank"))
+                  .put("activeTab", activeTab)
                   .put("frameId", JSONObject.NULL)
                   .put("extensionId", id)
                   .put("contextId", "popup:$token")
