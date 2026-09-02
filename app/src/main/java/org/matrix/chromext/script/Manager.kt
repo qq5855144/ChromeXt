@@ -10,6 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
 import org.matrix.chromext.extension.ExtensionPages
+import org.matrix.chromext.extension.ExtensionRunAt
 import org.matrix.chromext.extension.LocalFiles
 import org.matrix.chromext.utils.Log
 import org.matrix.chromext.utils.invokeMethod
@@ -201,7 +202,8 @@ object ScriptDbManager {
             if (it.grant.contains("frames")) framesGranted = true
             GM.bootstrap(it, codes)
           }
-      codes.addAll(LocalFiles.bootstrap(url, frameId))
+      val extensionCodes = ExtensionRunAt.schedule(LocalFiles.bootstrap(url, frameId), url, frameId)
+      codes.addAll(extensionCodes)
       if (frameId == null && LocalFiles.hasAllFrames(url)) framesGranted = true
       if (!asyncEvaluation) Chrome.evaluateJavascript(codes, webView, frameId)
     }
