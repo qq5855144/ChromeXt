@@ -15,6 +15,14 @@ const backgroundHost = fs.readFileSync(
   "app/src/main/java/org/matrix/chromext/extension/ExtensionBackgroundHost.kt",
   "utf8"
 );
+const activeTab = fs.readFileSync(
+  "app/src/main/java/org/matrix/chromext/extension/ExtensionActiveTab.kt",
+  "utf8"
+);
+const scriptingCompat = fs.readFileSync(
+  "app/src/main/java/org/matrix/chromext/extension/ExtensionScriptingCompat.kt",
+  "utf8"
+);
 const popupHost = fs.readFileSync(
   "app/src/main/java/org/matrix/chromext/extension/ExtensionPopup.kt",
   "utf8"
@@ -69,10 +77,21 @@ const listener = fs.readFileSync(
   "utf8"
 );
 
+// Backgrounds are now intentionally started from the known browser page lifecycle, but that path
+// must stay free of the old synchronous DevTools discovery that froze some Android browsers.
+assert.ok(
+  manager.includes("ExtensionActiveTab.remember") &&
+    manager.includes("ExtensionBackgroundHost.prepareAll"),
+  "top-level normal pages must retain a real action tab and start enabled extension backgrounds"
+);
 assert.equal(
   manager.includes("ExtensionBackgroundHost.bootstrap("),
   false,
-  "normal page navigation must not start or probe the extension background host"
+  "normal navigation must not use the obsolete background bootstrap/probe path"
+);
+assert.ok(
+  activeTab.includes("cx-local-") && activeTab.includes("fun resolve(id: String)"),
+  "extension tabs must use stable browser-owned synthetic ids that can resolve back to the real tab"
 );
 
 const localGuard = pages.indexOf('if (!isLocalExtensionResource(url)) return null');
@@ -82,21 +101,31 @@ assert.ok(
   enumerateExtensions > localGuard,
   "extension enumeration/resource server startup must happen only after the local-resource guard"
 );
+assert.ok(
+  pages.includes("ExtensionActiveTab.snapshot") && pages.includes("ExtensionCompat.script"),
+  "full extension pages must receive the real active-tab context and compatibility namespaces"
+);
 
 assert.ok(
-  backgroundHost.includes("fun prepare(") && backgroundHost.includes("WeakReference"),
-  "background compatibility must be lazily attached to an existing live tab"
+  backgroundHost.includes("fun prepareAll(") &&
+    backgroundHost.includes("fun dispatchActionClick(") &&
+    backgroundHost.includes("__cxExtensionRuntimes") &&
+    backgroundHost.includes("WeakReference"),
+  "background/service-worker bundles must be addressable, lifecycle-managed runtimes"
 );
 assert.equal(
   /getTabId|getInspectPages|wakeUpDevTools/.test(backgroundHost),
   false,
-  "lazy extension backgrounds must never synchronously probe DevTools"
+  "extension backgrounds must never synchronously probe DevTools"
 );
 assert.ok(
   bridge.includes("ExtensionBackgroundHost.prepare") &&
     bridge.includes("messageRoutes") &&
-    bridge.includes("deliverMessageResponse"),
-  "runtime messaging must lazily start backgrounds and retain a point-to-point response route"
+    bridge.includes("deliverMessageResponse") &&
+    bridge.includes("deliverToExtensionPages") &&
+    bridge.includes("ExtensionActiveTab.resolve") &&
+    bridge.includes('"activate"'),
+  "runtime messaging and browser-action activation must route across real extension contexts"
 );
 assert.equal(
   bridge.includes('Chrome.broadcast("cx_extension_message"'),
@@ -106,7 +135,12 @@ assert.equal(
 assert.equal(
   bridge.includes('Chrome.broadcast("cx_extension_message_response"'),
   false,
-  "runtime message responses must return directly to the sender"
+  "runtime message responses must return directly to their sender"
+);
+assert.ok(
+  scriptingCompat.includes("ExtensionActiveTab.resolve") &&
+    scriptingCompat.includes("fun executeScript("),
+  "scripting APIs must execute on the remembered real browser tab before any DevTools fallback"
 );
 
 assert.ok(
@@ -114,8 +148,9 @@ assert.ok(
     popupHost.includes("globalThis.chrome=__cxCreateExtensionApi") &&
     popupHost.includes("__chromextExtensionFrame") &&
     popupHost.includes("ExtensionCompat.script") &&
+    popupHost.includes("ExtensionActiveTab.snapshot") &&
     popupHost.includes("ResizeObserver"),
-  "popup documents must create chrome.*, load compatibility namespaces and report their sheet size"
+  "popup documents must create chrome.*, bind to the active browser tab and report their sheet size"
 );
 assert.ok(
   popupAddon.includes("allow-same-origin") &&
@@ -123,8 +158,8 @@ assert.ok(
     popupAddon.includes("cx-extension-popup-sheet") &&
     popupAddon.includes("cx-extension-toolbar-icon") &&
     popupAddon.includes('data.action !== "extensionApi"') &&
-    popupAddon.includes('op: "popup"'),
-  "manager must expose an extension-icon action and render the popup as a storage-capable bottom sheet"
+    popupAddon.includes('op: "activate"'),
+  "manager extension icons must behave like native browser actions and render popup sheets"
 );
 assert.ok(
   backgroundHost.includes("ExtensionCompat.script") && pages.includes("ExtensionCompat.script"),
@@ -134,8 +169,9 @@ assert.ok(
   compatAsset.includes("declarativeNetRequest") &&
     compatAsset.includes("webRequest") &&
     compatAsset.includes("userScripts") &&
-    compatAsset.includes("MAX_NUMBER_OF_DYNAMIC_RULES"),
-  "complex MV3 extensions must receive boot-safe webRequest, DNR and userScripts API shapes"
+    compatAsset.includes("MAX_NUMBER_OF_DYNAMIC_RULES") &&
+    compatAsset.includes("runtimeContext.activeTab"),
+  "complex MV3 extensions must receive boot-safe namespaces and a real active-tab snapshot"
 );
 assert.ok(
   local.includes('ctx.assets.open("extension_popup_addon.js")'),
@@ -225,4 +261,4 @@ assert.ok(
   "manager must load the reliable extension installer layer"
 );
 
-console.log("Extension navigation, runtime, action popup, virtual URL and installation safety checks passed");
+console.log("Extension lifecycle, navigation, action popup, routing and installation checks passed");
