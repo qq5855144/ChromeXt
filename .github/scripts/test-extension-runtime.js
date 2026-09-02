@@ -49,7 +49,9 @@ const native = {
         ? { os: "android", arch: "arm64", nacl_arch: "" }
         : request.api === "scripting.getRegisteredContentScripts"
           ? []
-          : null;
+          : request.api === "tabs.create"
+            ? { id: "cx-local-created", url: request.args?.[0]?.url || "about:blank" }
+            : null;
     queueMicrotask(() =>
       emit("cx_extension_response", {
         ok: true,
@@ -99,6 +101,7 @@ const manifest = {
   manifest_version: 3,
   enabled: true,
   baseUrl: "http://127.0.0.1:12345/",
+  optionsUrl: "http://127.0.0.1:12345/pages/options.html",
   host_permissions: ["https://example.com/*"],
   permissions: ["scripting", "declarativeNetRequest", "webRequest", "userScripts"],
   declarative_net_request: {
@@ -131,6 +134,7 @@ const chrome = sandbox.__cxFactory(manifest, context, native);
 sandbox.chrome = chrome;
 sandbox.browser = chrome;
 sandbox.__cxContext = context;
+sandbox.__cxExtension = manifest;
 vm.runInNewContext(compatSource, sandbox, { filename: "extension_compat.js" });
 
 (async () => {
@@ -201,6 +205,14 @@ vm.runInNewContext(compatSource, sandbox, { filename: "extension_compat.js" });
   const tabMessage = calls.find((call) => call.api === "tabs.sendMessage");
   assert.equal(tabMessage.args[0], activeTab.id, "tabs.sendMessage must use the real remembered tab id");
 
+  await chrome.runtime.openOptionsPage();
+  const optionsCall = calls.find((call) => call.api === "tabs.create");
+  assert.equal(
+    optionsCall?.args?.[0]?.url,
+    manifest.optionsUrl,
+    "runtime.openOptionsPage must use the native ChromeXt tab navigation path"
+  );
+
   assert.ok(chrome.webRequest?.onBeforeRequest?.addListener);
   assert.equal(chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES, 30000);
   assert.deepEqual(Array.from(await chrome.declarativeNetRequest.getEnabledRulesets()), ["ruleset_1"]);
@@ -216,7 +228,7 @@ vm.runInNewContext(compatSource, sandbox, { filename: "extension_compat.js" });
   assert.equal(userScripts.length, 1);
   assert.equal(userScripts[0].id, "userscript-1");
 
-  console.log("WebExtension runtime, active-tab routing and complex MV3 compatibility smoke test passed");
+  console.log("WebExtension runtime, active-tab routing, options navigation and MV3 compatibility smoke test passed");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
