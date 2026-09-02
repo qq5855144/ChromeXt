@@ -31,11 +31,13 @@ object ExtensionPages {
       }
     }
     val extension = manifest ?: return null
+    val activeTab = ExtensionActiveTab.snapshot()
     val context =
         JSONObject()
             .put("type", "extension_page")
             .put("url", url)
-            .put("activeUrl", url)
+            .put("activeUrl", activeTab.optString("url", "about:blank"))
+            .put("activeTab", activeTab)
             .put("frameId", JSONObject.NULL)
             .put("extensionId", extension.getString("id"))
     return """
