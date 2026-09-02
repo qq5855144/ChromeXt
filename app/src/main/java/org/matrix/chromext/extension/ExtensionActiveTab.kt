@@ -7,9 +7,8 @@ import org.matrix.chromext.Chrome
 /**
  * Keeps the last normal top-level web page available as an extension action context.
  *
- * This avoids DevTools tab enumeration when a manager-hosted action popup asks for the active tab.
- * The weak reference is used only while the original browser tab still points at the remembered
- * page; otherwise ChromeXt keeps the URL snapshot but will not route page commands to a stale tab.
+ * No DevTools discovery is performed here. ChromeXt remembers the browser-owned tab object while a
+ * normal HTTP(S) page is being initialized and exposes a stable synthetic id to WebExtensions.
  */
 object ExtensionActiveTab {
   private data class State(val tab: WeakReference<Any>, val url: String, val id: String)
@@ -19,7 +18,7 @@ object ExtensionActiveTab {
   fun remember(tab: Any?, url: String) {
     val target = Chrome.getTab(tab) ?: return
     if (!url.startsWith("http://") && !url.startsWith("https://")) return
-    state = State(WeakReference(target), url, "cx-local-${System.identityHashCode(target)}")
+    state = State(WeakReference(target), url, syntheticId(target))
   }
 
   fun preferred(fallback: Any? = null): Any? = liveTab() ?: Chrome.getTab(fallback)
@@ -27,6 +26,13 @@ object ExtensionActiveTab {
   fun url(fallback: String? = null): String = state?.url ?: fallback ?: "about:blank"
 
   fun id(): String = if (liveTab() != null) state?.id.orEmpty() else ""
+
+  fun idFor(tab: Any?): String {
+    val target = Chrome.getTab(tab) ?: return ""
+    val current = state
+    if (current != null && current.tab.get() === target && liveTab() != null) return current.id
+    return syntheticId(target)
+  }
 
   fun resolve(id: String): Any? {
     val current = state ?: return null
@@ -40,10 +46,16 @@ object ExtensionActiveTab {
     val fallback = Chrome.getTab(fallbackTab)
     val fallbackUrl = Chrome.getUrl(fallback) ?: "about:blank"
     val url = current?.url ?: fallbackUrl
-    val id = if (live != null) current?.id.orEmpty() else ""
+    val id =
+        when {
+          live != null -> current?.id.orEmpty()
+          fallback != null -> syntheticId(fallback)
+          else -> ""
+        }
     return JSONObject()
         .put("id", id)
         .put("url", url)
+        .put("title", "")
         .put("active", true)
         .put("highlighted", true)
         .put("selected", true)
@@ -53,6 +65,8 @@ object ExtensionActiveTab {
         .put("index", 0)
         .put("status", "complete")
   }
+
+  private fun syntheticId(tab: Any): String = "cx-local-${System.identityHashCode(tab)}"
 
   private fun liveTab(): Any? {
     val current = state ?: return null
