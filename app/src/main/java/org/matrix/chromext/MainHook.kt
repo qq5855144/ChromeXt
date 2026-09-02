@@ -10,10 +10,10 @@ import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import org.matrix.chromext.hook.BaseHook
 import org.matrix.chromext.hook.ContextMenuHook
+import org.matrix.chromext.hook.ExtensionHook
 import org.matrix.chromext.hook.PageInfoHook
 import org.matrix.chromext.hook.PageMenuHook
 import org.matrix.chromext.hook.PreferenceHook
-import org.matrix.chromext.hook.UserScriptHook
 import org.matrix.chromext.hook.WebViewHook
 import org.matrix.chromext.utils.Log
 import org.matrix.chromext.utils.findMethodOrNull
@@ -61,7 +61,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
           .declaredConstructors[1]
           .hookAfter {
             Chrome.init(it.args[0] as Context, lpparam.packageName)
-            initHooks(UserScriptHook)
+            initHooks(ExtensionHook)
             if (ContextMenuHook.isInit) return@hookAfter
             runCatching {
                   if (!Chrome.isVivaldi) initHooks(PreferenceHook)
